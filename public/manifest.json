@@ -1,0 +1,30 @@
+{
+  "name": "Rack 'n' Bag Tournament Manager",
+  "short_name": "Rack 'n' Bag",
+  "description": "Create and manage tournaments with ease. Track scores, standings, and real-time results.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#E63946",
+  "orientation": "portrait-primary",
+  "categories": ["sports", "utilities"],
+  "dir": "ltr",
+  "lang": "en",
+  "prefer_related_applications": false,
+  "related_applications": [],
+  "scope": "/",
+  "iarc_rating_id": "",
+  "share_target": {
+    "action": "/import",
+    "method": "POST",
+    "enctype": "multipart/form-data",
+    "params": {
+      "files": [
+        {
+          "name": "tournament",
+          "accept": [".json"]
+        }
+      ]
+    }
+  }
+}
