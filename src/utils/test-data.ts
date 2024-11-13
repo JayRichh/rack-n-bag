@@ -3,24 +3,24 @@ export const testTournament = {
   name: "Test Tournament",
   phase: "SINGLE",
   teams: [
-    { id: "team1", name: "Team 1", status: "ACTIVE", played: 0, won: 0, lost: 0, points: 0 },
-    { id: "team2", name: "Team 2", status: "ACTIVE", played: 0, won: 0, lost: 0, points: 0 },
-    { id: "team3", name: "Team 3", status: "ACTIVE", played: 0, won: 0, lost: 0, points: 0 },
-    { id: "team4", name: "Team 4", status: "ACTIVE", played: 0, won: 0, lost: 0, points: 0 }
+    { id: "player1", name: "John Smith", status: "ACTIVE", played: 0, won: 0, lost: 0, points: 0 },
+    { id: "player2", name: "Sarah Johnson", status: "ACTIVE", played: 0, won: 0, lost: 0, points: 0 },
+    { id: "player3", name: "Mike Davis", status: "ACTIVE", played: 0, won: 0, lost: 0, points: 0 },
+    { id: "player4", name: "Emma Wilson", status: "ACTIVE", played: 0, won: 0, lost: 0, points: 0 }
   ],
   fixtures: [
     {
       id: "fix1",
-      homeTeamId: "team1",
-      awayTeamId: "team2",
+      homeTeamId: "player1",
+      awayTeamId: "player2",
       played: false,
       phase: "HOME",
       datePlayed: new Date().toISOString()
     },
     {
       id: "fix2",
-      homeTeamId: "team3",
-      awayTeamId: "team4",
+      homeTeamId: "player3",
+      awayTeamId: "player4",
       played: false,
       phase: "HOME",
       datePlayed: new Date().toISOString()
