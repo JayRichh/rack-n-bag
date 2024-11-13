@@ -36,23 +36,35 @@ export function TournamentHeader({
   participantTeamId,
   onParticipantSelect
 }: TournamentHeaderProps) {
-  const ViewButton = ({ mode, icon: Icon, label }: { mode: ViewMode; icon: any; label: string }) => (
-    <motion.button
-      onClick={() => onViewModeChange(mode)}
-      className={`
-        flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
-        ${viewMode === mode 
-          ? 'bg-accent text-white' 
-          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
-        }
-        transition-colors
-      `}
-      whileHover={{ scale: 1.00 }}
-      whileTap={{ scale: 0.95 }}
-    >
-      <Icon className="w-4 h-4" />
-      {label}
-    </motion.button>
+  const ViewButton = ({ mode, icon: Icon, label, tooltip }: { mode: ViewMode; icon: any; label: string; tooltip: string }) => (
+    <Tooltip.Root>
+      <Tooltip.Trigger asChild>
+        <motion.button
+          onClick={() => onViewModeChange(mode)}
+          className={`
+            flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+            ${viewMode === mode 
+              ? 'bg-accent text-white' 
+              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+            }
+            transition-colors
+          `}
+          whileHover={{ scale: 1.00 }}
+          whileTap={{ scale: 0.95 }}
+        >
+          <Icon className="w-4 h-4" />
+          {label}
+        </motion.button>
+      </Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content 
+          className="bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm"
+          sideOffset={5}
+        >
+          {tooltip}
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
   );
 
   const ActionButton = ({ 
@@ -119,7 +131,7 @@ export function TournamentHeader({
                 className="bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm"
                 sideOffset={5}
               >
-                Back to Tournaments
+                Return to tournament list
               </Tooltip.Content>
             </Tooltip.Portal>
           </Tooltip.Root>
@@ -132,25 +144,25 @@ export function TournamentHeader({
         <div className="flex items-center gap-2">
           <ActionButton
             icon={Eye}
-            label="Display"
+            label="View Options"
             onClick={onPreferencesToggle}
             isActive={showPreferences}
-            tooltip="Customize display preferences"
+            tooltip="Customize how tournament data is displayed"
           />
 
           <ActionButton
             icon={Cog}
-            label="Settings"
+            label="Tournament Settings"
             onClick={onSettingsToggle}
             isActive={showSettings}
-            tooltip="Tournament settings & data"
+            tooltip="Configure tournament rules and manage data"
           />
 
           <ActionButton
             icon={Edit}
-            label="Edit"
+            label="Edit Details"
             onClick={onEdit}
-            tooltip="Edit tournament details"
+            tooltip="Modify tournament name, players, and point system"
           />
         </div>
       </div>
@@ -158,9 +170,24 @@ export function TournamentHeader({
       {/* Bottom Bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <ViewButton mode="STATS" icon={BarChart2} label="Tournament Stats" />
-          <ViewButton mode="GRID" icon={Grid} label="Results Grid" />
-          <ViewButton mode="TABLE" icon={Table2} label="League Table" />
+          <ViewButton 
+            mode="STATS" 
+            icon={BarChart2} 
+            label="Performance Stats" 
+            tooltip="View detailed player performance statistics"
+          />
+          <ViewButton 
+            mode="GRID" 
+            icon={Grid} 
+            label="Results Grid" 
+            tooltip="View and update game results in a grid format"
+          />
+          <ViewButton 
+            mode="TABLE" 
+            icon={Table2} 
+            label="Player Rankings" 
+            tooltip="View tournament standings and player rankings"
+          />
         </div>
 
         <div className="w-64">

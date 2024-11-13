@@ -3,7 +3,6 @@ export interface TournamentSettings {
   showUpcoming: boolean;
   highlightMyMatches: boolean;
   lowMotion: boolean;
-  darkMode: boolean;
 }
 
 export interface GlobalSettings {
@@ -16,15 +15,13 @@ export type SettingsUpdatePayload = {
   lowMotion?: boolean;
   theme?: GlobalSettings['theme'];
   notifications?: boolean;
-  darkMode?: boolean;
 }
 
 export const defaultTournamentSettings: TournamentSettings = {
   showCompleted: true,
   showUpcoming: true,
   highlightMyMatches: true,
-  lowMotion: false,
-  darkMode: false
+  lowMotion: false
 };
 
 export const defaultGlobalSettings: GlobalSettings = {

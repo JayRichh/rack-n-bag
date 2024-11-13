@@ -207,18 +207,18 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
               </div>
             </motion.div>
 
-            {/* Teams */}
+            {/* Players */}
             <motion.div variants={sectionVariants}>
-              <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100 mb-4`}>Teams</h3>
+              <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100 mb-4`}>Players on Team</h3>
               
-              {/* Add Team */}
+              {/* Add Player */}
               <div className="flex gap-4 mb-6">
                 <input
                   type="text"
                   value={newTeamName}
                   onChange={(e) => setNewTeamName(e.target.value)}
                   className="form-input flex-grow"
-                  placeholder="Enter team name"
+                  placeholder="Enter player name"
                 />
                 <button
                   type="button"
@@ -226,11 +226,11 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
                   className="btn btn-secondary"
                   disabled={!newTeamName.trim()}
                 >
-                  Add Team
+                  Add Player on Team
                 </button>
               </div>
 
-              {/* Team List */}
+              {/* Player List */}
               <div className="space-y-3">
                 <AnimatePresence mode="popLayout">
                   {teams.map(team => (
@@ -265,7 +265,7 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
                     exit={{ opacity: 0, y: -10 }}
                     transition={{ duration: 0.1 }}
                   >
-                    Add at least 2 teams to create a tournament
+                    Add at least 2 players to create a tournament
                   </motion.p>
                 )}
               </AnimatePresence>

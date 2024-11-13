@@ -67,7 +67,7 @@ const TournamentCard = forwardRef<HTMLDivElement, { tournament: Tournament; onCl
                 animate={{ scale: 1, opacity: 1 }}
                 transition={{ delay: 0.1 }}
               >
-                {tournament.teams.length} Teams
+                {tournament.teams.length} Players on Team
               </motion.div>
             </div>
 

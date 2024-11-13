@@ -7,15 +7,15 @@ import { useMemo, useState } from 'react';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { Info, TrendingDown, TrendingUp, Minus, ChevronUp, ChevronDown } from 'lucide-react';
 
-interface TeamStats extends Team {
+interface PlayerStats extends Team {
   gamesPlayed: number;
   wins: number;
   losses: number;
   draws: number;
-  goalsFor: number;
-  goalsAgainst: number;
-  goalDifference: number;
-  points: number;
+  pointsScored: number;
+  pointsConceded: number;
+  pointsDifference: number;
+  tournamentPoints: number;
   form: ('W' | 'L' | 'D')[];
   previousPosition?: number;
 }
@@ -26,19 +26,19 @@ interface TournamentTableProps {
 }
 
 const columnDefinitions = {
-  position: { label: 'Position', tooltip: 'Current league position' },
-  team: { label: 'Team', tooltip: 'Team name' },
+  position: { label: 'Position', tooltip: 'Current tournament position' },
+  player: { label: 'Player', tooltip: 'Player name' },
   p: { label: 'P', tooltip: 'Games Played' },
   w: { label: 'W', tooltip: 'Wins' },
   d: { label: 'D', tooltip: 'Draws' },
   l: { label: 'L', tooltip: 'Losses' },
-  gf: { label: 'GF', tooltip: 'Goals For' },
-  ga: { label: 'GA', tooltip: 'Goals Against' },
-  gd: { label: 'GD', tooltip: 'Goal Difference' },
-  pts: { label: 'PTS', tooltip: 'Points' }
+  pf: { label: 'PF', tooltip: 'Points For' },
+  pa: { label: 'PA', tooltip: 'Points Against' },
+  pd: { label: 'PD', tooltip: 'Points Difference' },
+  pts: { label: 'PTS', tooltip: 'Tournament Points' }
 };
 
-type SortField = 'points' | 'goalDifference' | 'goalsFor' | 'wins' | 'draws' | 'losses';
+type SortField = 'tournamentPoints' | 'pointsDifference' | 'pointsScored' | 'wins' | 'draws' | 'losses';
 type SortDirection = 'asc' | 'desc';
 
 function FormBadge({ result }: { result: 'W' | 'L' | 'D' }) {
@@ -68,11 +68,11 @@ function PositionIndicator({ current, previous }: { current: number; previous?: 
 }
 
 export function TournamentTable({ tournament, participantTeamId }: TournamentTableProps) {
-  const [sortField, setSortField] = useState<SortField>('points');
+  const [sortField, setSortField] = useState<SortField>('tournamentPoints');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
 
-  const teamStats = useMemo<TeamStats[]>(() => {
+  const playerStats = useMemo<PlayerStats[]>(() => {
     return tournament.teams.map(team => {
       const teamFixtures = tournament.fixtures.filter(
         f => f.homeTeamId === team.id || f.awayTeamId === team.id
@@ -83,9 +83,9 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
         wins: 0,
         losses: 0,
         draws: 0,
-        goalsFor: 0,
-        goalsAgainst: 0,
-        points: 0,
+        pointsScored: 0,
+        pointsConceded: 0,
+        tournamentPoints: 0,
         form: [] as ('W' | 'L' | 'D')[]
       };
 
@@ -100,20 +100,20 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
         const opponentScore = isHome ? fixture.awayScore! : fixture.homeScore!;
 
         stats.gamesPlayed++;
-        stats.goalsFor += teamScore;
-        stats.goalsAgainst += opponentScore;
+        stats.pointsScored += teamScore;
+        stats.pointsConceded += opponentScore;
 
         if (teamScore > opponentScore) {
           stats.wins++;
-          stats.points += tournament.pointsConfig.win;
+          stats.tournamentPoints += tournament.pointsConfig.win;
           stats.form.push('W');
         } else if (teamScore < opponentScore) {
           stats.losses++;
-          stats.points += tournament.pointsConfig.loss;
+          stats.tournamentPoints += tournament.pointsConfig.loss;
           stats.form.push('L');
         } else {
           stats.draws++;
-          stats.points += tournament.pointsConfig.draw ?? 0;
+          stats.tournamentPoints += tournament.pointsConfig.draw ?? 0;
           stats.form.push('D');
         }
       });
@@ -124,23 +124,23 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
       return {
         ...team,
         ...stats,
-        goalDifference: stats.goalsFor - stats.goalsAgainst,
+        pointsDifference: stats.pointsScored - stats.pointsConceded,
       };
     }).sort((a, b) => {
-      const getValue = (team: TeamStats) => team[sortField];
+      const getValue = (player: PlayerStats) => player[sortField];
       const modifier = sortDirection === 'desc' ? -1 : 1;
       
       const diff = (getValue(a) - getValue(b)) * modifier;
       if (diff !== 0) return diff;
       
       // Secondary sorting
-      if (sortField !== 'goalDifference') {
-        const gdDiff = (b.goalDifference - a.goalDifference) * modifier;
-        if (gdDiff !== 0) return gdDiff;
+      if (sortField !== 'pointsDifference') {
+        const pdDiff = (b.pointsDifference - a.pointsDifference) * modifier;
+        if (pdDiff !== 0) return pdDiff;
       }
       
-      if (sortField !== 'goalsFor') {
-        return (b.goalsFor - a.goalsFor) * modifier;
+      if (sortField !== 'pointsScored') {
+        return (b.pointsScored - a.pointsScored) * modifier;
       }
       
       return 0;
@@ -170,7 +170,7 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
           className={`${typography.h2} text-black/90 dark:text-white/90 font-bold tracking-tight [text-shadow:_0_1px_1px_rgba(0,0,0,0.05)]`}
           layout
         >
-          Tournament Table
+          Player Rankings
         </motion.h2>
         
         {/* Legend */}
@@ -210,19 +210,19 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
                   <Tooltip.Root>
                     <Tooltip.Trigger asChild>
                       <div className="flex items-center gap-1">
-                        {columnDefinitions.team.label}
+                        {columnDefinitions.player.label}
                         <Info className="w-4 h-4" />
                       </div>
                     </Tooltip.Trigger>
                     <Tooltip.Portal>
                       <Tooltip.Content className="bg-white dark:bg-gray-800 p-2 rounded-lg shadow-lg text-sm">
-                        {columnDefinitions.team.tooltip}
+                        {columnDefinitions.player.tooltip}
                       </Tooltip.Content>
                     </Tooltip.Portal>
                   </Tooltip.Root>
                 </th>
                 {Object.entries(columnDefinitions)
-                  .filter(([key]) => !['position', 'team'].includes(key))
+                  .filter(([key]) => !['position', 'player'].includes(key))
                   .map(([key, { label, tooltip }]) => (
                     <th 
                       key={key}
@@ -252,51 +252,51 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
             </thead>
             <tbody className="divide-y divide-border">
               <AnimatePresence mode="popLayout">
-                {teamStats.map((team, index) => (
+                {playerStats.map((player, index) => (
                   <motion.tr 
-                    key={team.id}
+                    key={player.id}
                     layout
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     className={`
                       group transition-colors duration-150
-                      ${team.id === participantTeamId ? 'bg-accent/5' : 'hover:bg-muted/5'}
-                      ${expandedTeamId === team.id ? 'bg-muted/10' : ''}
+                      ${player.id === participantTeamId ? 'bg-accent/5' : 'hover:bg-muted/5'}
+                      ${expandedTeamId === player.id ? 'bg-muted/10' : ''}
                     `}
-                    onClick={() => setExpandedTeamId(expandedTeamId === team.id ? null : team.id)}
+                    onClick={() => setExpandedTeamId(expandedTeamId === player.id ? null : player.id)}
                   >
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 w-12">
                       <div className="flex items-center gap-2">
                         {index + 1}
                         <PositionIndicator 
                           current={index + 1}
-                          previous={team.previousPosition}
+                          previous={player.previousPosition}
                         />
                       </div>
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium
-                      ${team.id === participantTeamId
+                      ${player.id === participantTeamId
                         ? 'text-accent font-bold'
                         : 'text-gray-900 dark:text-gray-100'
                       }`}
                     >
-                      {team.name}
-                      {team.id === participantTeamId && (
-                        <span className="ml-2 text-xs text-accent/80">(Your Team)</span>
+                      {player.name}
+                      {player.id === participantTeamId && (
+                        <span className="ml-2 text-xs text-accent/80">(You)</span>
                       )}
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{team.gamesPlayed}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{team.wins}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{team.draws}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{team.losses}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{team.goalsFor}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{team.goalsAgainst}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{team.goalDifference}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center font-bold text-gray-900 dark:text-gray-100">{team.points}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.gamesPlayed}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.wins}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.draws}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.losses}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.pointsScored}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.pointsConceded}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.pointsDifference}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center font-bold text-gray-900 dark:text-gray-100">{player.tournamentPoints}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <div className="flex justify-center gap-1">
-                        {team.form.map((result, i) => (
+                        {player.form.map((result, i) => (
                           <FormBadge key={i} result={result} />
                         ))}
                       </div>
@@ -311,15 +311,15 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
 
       {/* Mobile View - Stacked Cards */}
       <div className="md:hidden space-y-4">
-        {teamStats.map((team, index) => (
+        {playerStats.map((player, index) => (
           <motion.div
-            key={team.id}
+            key={player.id}
             layout
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className={`${containers.card} ${
-              team.id === participantTeamId ? 'bg-accent/5' : ''
+              player.id === participantTeamId ? 'bg-accent/5' : ''
             }`}
           >
             <div className="flex justify-between items-start mb-4">
@@ -328,40 +328,40 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
                   <span className="text-lg font-bold">{index + 1}</span>
                   <PositionIndicator 
                     current={index + 1}
-                    previous={team.previousPosition}
+                    previous={player.previousPosition}
                   />
                 </div>
                 <h3 className={`text-lg font-medium ${
-                  team.id === participantTeamId ? 'text-accent' : ''
+                  player.id === participantTeamId ? 'text-accent' : ''
                 }`}>
-                  {team.name}
-                  {team.id === participantTeamId && (
-                    <span className="ml-2 text-xs text-accent/80">(Your Team)</span>
+                  {player.name}
+                  {player.id === participantTeamId && (
+                    <span className="ml-2 text-xs text-accent/80">(You)</span>
                   )}
                 </h3>
               </div>
-              <div className="text-2xl font-bold">{team.points}</div>
+              <div className="text-2xl font-bold">{player.tournamentPoints}</div>
             </div>
 
             <div className="grid grid-cols-3 gap-4 mb-4">
               <div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">Played</div>
-                <div className="text-lg">{team.gamesPlayed}</div>
+                <div className="text-lg">{player.gamesPlayed}</div>
               </div>
               <div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">Won</div>
-                <div className="text-lg">{team.wins}</div>
+                <div className="text-lg">{player.wins}</div>
               </div>
               <div>
                 <div className="text-xs text-gray-500 dark:text-gray-400">Lost</div>
-                <div className="text-lg">{team.losses}</div>
+                <div className="text-lg">{player.losses}</div>
               </div>
             </div>
 
             <div className="space-y-2">
               <div className="text-xs text-gray-500 dark:text-gray-400">Form</div>
               <div className="flex gap-1">
-                {team.form.map((result, i) => (
+                {player.form.map((result, i) => (
                   <FormBadge key={i} result={result} />
                 ))}
               </div>

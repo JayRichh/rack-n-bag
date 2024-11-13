@@ -11,7 +11,7 @@ import {
   Trophy, 
   Target, 
   Percent,
-  Goal,
+  Award,
   ArrowUpRight,
   ArrowDownRight,
   Minus as MinusIcon,
@@ -44,12 +44,12 @@ export function TournamentStats({ tournament, participantTeamId }: TournamentSta
       return teamScore > opponentScore;
     }).length;
 
-    const goalsFor = playedFixtures.reduce((sum, f) => {
+    const pointsScored = playedFixtures.reduce((sum, f) => {
       const isHome = f.homeTeamId === team.id;
       return sum + (isHome ? f.homeScore! : f.awayScore!);
     }, 0);
 
-    const goalsAgainst = playedFixtures.reduce((sum, f) => {
+    const pointsConceded = playedFixtures.reduce((sum, f) => {
       const isHome = f.homeTeamId === team.id;
       return sum + (isHome ? f.awayScore! : f.homeScore!);
     }, 0);
@@ -85,16 +85,16 @@ export function TournamentStats({ tournament, participantTeamId }: TournamentSta
 
     return {
       position,
-      totalTeams: tournament.teams.length,
-      points: team.points,
+      totalPlayers: tournament.teams.length,
+      tournamentPoints: team.points,
       winRate,
-      goalDifference: goalsFor - goalsAgainst,
+      pointsDifference: pointsScored - pointsConceded,
       form: recentForm,
       matchesPlayed: playedFixtures.length,
       matchesRemaining,
       nextOpponent,
-      goalsFor,
-      goalsAgainst
+      pointsScored,
+      pointsConceded
     };
   }, [tournament, participantTeamId]);
 
@@ -179,23 +179,23 @@ export function TournamentStats({ tournament, participantTeamId }: TournamentSta
           Tournament Statistics
         </h2>
         <p className="text-gray-600 dark:text-gray-400">
-          Visualize tournament progress and team performance
+          Track your performance and tournament progress
         </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard 
           label="Position" 
-          value={`${stats.position}/${stats.totalTeams}`}
+          value={`${stats.position}/${stats.totalPlayers}`}
           icon={Trophy}
-          trend={stats.position === 1 ? 'up' : stats.position === stats.totalTeams ? 'down' : 'neutral'}
-          tooltip="Current league position"
+          trend={stats.position === 1 ? 'up' : stats.position === stats.totalPlayers ? 'down' : 'neutral'}
+          tooltip="Current tournament position"
         />
         <StatCard 
-          label="Points" 
-          value={stats.points}
+          label="Tournament Points" 
+          value={stats.tournamentPoints}
           icon={Target}
-          tooltip="Total points earned"
+          tooltip="Total tournament points earned"
         />
         <StatCard 
           label="Win Rate" 
@@ -205,11 +205,11 @@ export function TournamentStats({ tournament, participantTeamId }: TournamentSta
           tooltip="Percentage of matches won"
         />
         <StatCard 
-          label="Goal Difference" 
-          value={stats.goalDifference}
-          icon={Goal}
-          trend={stats.goalDifference > 0 ? 'up' : stats.goalDifference < 0 ? 'down' : 'neutral'}
-          tooltip="Goals scored minus goals conceded"
+          label="Points Difference" 
+          value={stats.pointsDifference}
+          icon={Award}
+          trend={stats.pointsDifference > 0 ? 'up' : stats.pointsDifference < 0 ? 'down' : 'neutral'}
+          tooltip="Points scored minus points conceded"
         />
       </div>
 

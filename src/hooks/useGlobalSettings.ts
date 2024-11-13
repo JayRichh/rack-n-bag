@@ -8,7 +8,6 @@ export function useGlobalSettings() {
   const [settings, setSettings] = useState<GlobalSettings>(defaultGlobalSettings);
   const [isLoaded, setIsLoaded] = useState(false);
   const [systemTheme, setSystemTheme] = useState<'dark' | 'light'>('light');
-  const themeChangeTimeoutRef = useRef<NodeJS.Timeout>();
 
   // Initialize system theme and watch for changes
   useEffect(() => {
@@ -32,21 +31,32 @@ export function useGlobalSettings() {
     setIsLoaded(true);
   }, []);
 
-  // Update theme class immediately
+  // Update theme class comprehensively
   const updateThemeClass = useCallback((themeClass: string) => {
-    const elements = [document.documentElement, document.body];
-    elements.forEach(el => {
-      el.classList.remove('light', 'dark');
-      el.classList.add(themeClass);
-    });
+    // Remove existing theme classes
+    document.documentElement.classList.remove('light', 'dark');
+    document.body.classList.remove('light', 'dark');
 
-    // Force a repaint
-    if (themeChangeTimeoutRef.current) {
-      clearTimeout(themeChangeTimeoutRef.current);
+    // Add new theme class to root elements
+    document.documentElement.classList.add(themeClass);
+    document.body.classList.add(themeClass);
+
+    // Set data-theme attribute for components that might use it
+    document.documentElement.setAttribute('data-theme', themeClass);
+    
+    // Update CSS variables for consistent theming
+    if (themeClass === 'dark') {
+      document.documentElement.style.setProperty('--background', '#1a1b1e');
+      document.documentElement.style.setProperty('--foreground', '#ffffff');
+    } else {
+      document.documentElement.style.setProperty('--background', '#ffffff');
+      document.documentElement.style.setProperty('--foreground', '#000000');
     }
-    themeChangeTimeoutRef.current = setTimeout(() => {
-      document.body.style.backgroundColor = document.body.style.backgroundColor;
-    }, 0);
+
+    // Force a repaint to ensure theme is applied consistently
+    document.body.style.display = 'none';
+    document.body.offsetHeight; // Force reflow
+    document.body.style.display = '';
   }, []);
 
   // Save settings and update theme
@@ -60,7 +70,8 @@ export function useGlobalSettings() {
       if (typeof newSettings.theme !== 'undefined') {
         updated.theme = newSettings.theme;
         // Update theme class immediately
-        updateThemeClass(newSettings.theme);
+        const effectiveTheme = newSettings.theme === 'system' ? systemTheme : newSettings.theme;
+        updateThemeClass(effectiveTheme);
       }
       if (typeof newSettings.notifications !== 'undefined') {
         updated.notifications = newSettings.notifications;
@@ -71,7 +82,7 @@ export function useGlobalSettings() {
 
       return updated;
     });
-  }, [updateThemeClass]);
+  }, [updateThemeClass, systemTheme]);
 
   const getAnimationConfig = useCallback(() => {
     if (settings.lowMotion) {
@@ -120,7 +131,8 @@ export function useGlobalSettings() {
   // Update theme class whenever theme or system theme changes
   useEffect(() => {
     if (!isLoaded) return;
-    updateThemeClass(getThemeClass());
+    const effectiveTheme = getThemeClass();
+    updateThemeClass(effectiveTheme);
   }, [isLoaded, getThemeClass, updateThemeClass]);
 
   return {

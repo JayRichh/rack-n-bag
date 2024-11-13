@@ -9,7 +9,8 @@ import {
   CheckCircle2,
   XCircle,
   CircleDot,
-  Clock
+  Clock,
+  Info
 } from 'lucide-react';
 import { ResultsEntryModal } from './ResultsEntryModal';
 
@@ -19,15 +20,15 @@ interface ResultsMatrixProps {
   onUpdateResult?: (fixture: Fixture, homeScore: number, awayScore: number) => void;
 }
 
-type MatchResult = 'WIN' | 'LOSS' | 'DRAW' | 'PENDING';
+type GameResult = 'WIN' | 'LOSS' | 'DRAW' | 'PENDING';
 
-function getMatchResult(homeScore: number, awayScore: number): MatchResult {
+function getGameResult(homeScore: number, awayScore: number): GameResult {
   if (homeScore > awayScore) return 'WIN';
   if (homeScore < awayScore) return 'LOSS';
   return 'DRAW';
 }
 
-function getResultColor(result: MatchResult, isDark: boolean = false) {
+function getResultColor(result: GameResult, isDark: boolean = false) {
   switch (result) {
     case 'WIN':
       return isDark ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700';
@@ -40,7 +41,7 @@ function getResultColor(result: MatchResult, isDark: boolean = false) {
   }
 }
 
-function getResultIcon(result: MatchResult) {
+function getResultIcon(result: GameResult) {
   switch (result) {
     case 'WIN':
       return <CheckCircle2 className="w-4 h-4" />;
@@ -53,19 +54,19 @@ function getResultIcon(result: MatchResult) {
   }
 }
 
-function getTeamStreak(fixtures: Tournament['fixtures'], teamId: string): { type: MatchResult; count: number } | null {
+function getPlayerStreak(fixtures: Tournament['fixtures'], teamId: string): { type: GameResult; count: number } | null {
   const teamFixtures = fixtures
     .filter(f => f.played && (f.homeTeamId === teamId || f.awayTeamId === teamId))
     .sort((a, b) => new Date(b.datePlayed!).getTime() - new Date(a.datePlayed!).getTime());
 
   if (teamFixtures.length === 0) return null;
 
-  let streakType: MatchResult | null = null;
+  let streakType: GameResult | null = null;
   let streakCount = 0;
 
   for (const fixture of teamFixtures) {
     const isHome = fixture.homeTeamId === teamId;
-    const result = getMatchResult(
+    const result = getGameResult(
       isHome ? fixture.homeScore! : fixture.awayScore!,
       isHome ? fixture.awayScore! : fixture.homeScore!
     );
@@ -91,9 +92,9 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
     awayTeam: Team;
   } | null>(null);
 
-  const teamStats = useMemo(() => {
+  const playerStats = useMemo(() => {
     return tournament.teams.map(team => {
-      const streak = getTeamStreak(tournament.fixtures, team.id);
+      const streak = getPlayerStreak(tournament.fixtures, team.id);
       return {
         ...team,
         streak
@@ -144,9 +145,35 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
             <h2 className={`${typography.h2} text-black/90 dark:text-white/90 mb-2`}>
               Results Grid
             </h2>
-            <p className="text-gray-600 dark:text-gray-400">
-              {onUpdateResult ? 'View and update match results' : 'View match results'}
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="text-gray-600 dark:text-gray-400">
+                {onUpdateResult ? 'View and update game results' : 'View game results'}
+              </p>
+              <Tooltip.Provider>
+                <Tooltip.Root>
+                  <Tooltip.Trigger asChild>
+                    <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                      <Info className="w-4 h-4" />
+                    </button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Portal>
+                    <Tooltip.Content
+                      className="bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm max-w-xs"
+                      sideOffset={5}
+                    >
+                      <div className="space-y-2">
+                        <p>Click on any cell to enter game points.</p>
+                        <p>Winner gets {tournament.pointsConfig.win} tournament points</p>
+                        {tournament.pointsConfig.draw !== undefined && (
+                          <p>Draw awards {tournament.pointsConfig.draw} tournament points</p>
+                        )}
+                        <p>Loser gets {tournament.pointsConfig.loss} tournament points</p>
+                      </div>
+                    </Tooltip.Content>
+                  </Tooltip.Portal>
+                </Tooltip.Root>
+              </Tooltip.Provider>
+            </div>
           </div>
           
           {/* Legend */}
@@ -180,10 +207,10 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
               <tr>
                 <th className="sticky left-0 z-10 bg-white dark:bg-gray-900 px-6 py-4 text-left border-b border-gray-200 dark:border-gray-800">
                   <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Teams
+                    Players
                   </div>
                 </th>
-                {teamStats.map(team => (
+                {playerStats.map(team => (
                   <th 
                     key={team.id}
                     className="px-6 py-4 border-b border-gray-200 dark:border-gray-800"
@@ -209,7 +236,7 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
               </tr>
             </thead>
             <tbody>
-              {teamStats.map(homeTeam => (
+              {playerStats.map(homeTeam => (
                 <tr key={homeTeam.id}>
                   <th 
                     className={`
@@ -220,7 +247,7 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
                   >
                     {homeTeam.name}
                   </th>
-                  {teamStats.map(awayTeam => {
+                  {playerStats.map(awayTeam => {
                     const fixture = getFixture(homeTeam.id, awayTeam.id);
                     const cellId = `${homeTeam.id}-${awayTeam.id}`;
                     
@@ -235,9 +262,9 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
                       );
                     }
 
-                    let result: MatchResult = 'PENDING';
+                    let result: GameResult = 'PENDING';
                     if (fixture?.played) {
-                      result = getMatchResult(fixture.homeScore!, fixture.awayScore!);
+                      result = getGameResult(fixture.homeScore!, fixture.awayScore!);
                     }
 
                     return (
@@ -245,35 +272,57 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
                         key={cellId}
                         className="relative p-0 border-b border-gray-200 dark:border-gray-800"
                       >
-                        <div 
-                          className="overflow-hidden"
-                          onMouseEnter={() => setHoveredCell(cellId)}
-                          onMouseLeave={() => setHoveredCell(null)}
-                        >
-                          <motion.div
-                            className={`
-                              flex items-center justify-center gap-2 p-3
-                              ${getResultColor(result)}
-                              ${hoveredCell === cellId && onUpdateResult ? 'ring-1 ring-inset ring-primary ring-opacity-50' : ''}
-                              ${onUpdateResult ? 'cursor-pointer' : ''}
-                              transform-gpu
-                            `}
-                            onClick={() => handleCellClick(homeTeam, awayTeam)}
-                            whileHover={onUpdateResult ? { scale: 1.02 } : undefined}
-                            transition={{ duration: 0.2 }}
-                          >
-                            {fixture?.played ? (
-                              <>
-                                <span className="font-medium">
-                                  {fixture.homeScore} - {fixture.awayScore}
-                                </span>
-                                {getResultIcon(result)}
-                              </>
-                            ) : (
-                              <span className="text-gray-400 dark:text-gray-500">vs</span>
-                            )}
-                          </motion.div>
-                        </div>
+                        <Tooltip.Provider>
+                          <Tooltip.Root>
+                            <Tooltip.Trigger asChild>
+                              <div 
+                                className="overflow-hidden"
+                                onMouseEnter={() => setHoveredCell(cellId)}
+                                onMouseLeave={() => setHoveredCell(null)}
+                              >
+                                <motion.div
+                                  className={`
+                                    flex items-center justify-center gap-2 p-3
+                                    ${getResultColor(result)}
+                                    ${hoveredCell === cellId && onUpdateResult ? 'ring-1 ring-inset ring-primary ring-opacity-50' : ''}
+                                    ${onUpdateResult ? 'cursor-pointer' : ''}
+                                    transform-gpu
+                                  `}
+                                  onClick={() => handleCellClick(homeTeam, awayTeam)}
+                                  whileHover={onUpdateResult ? { scale: 1.02 } : undefined}
+                                  transition={{ duration: 0.2 }}
+                                >
+                                  {fixture?.played ? (
+                                    <>
+                                      <span className="font-medium">
+                                        {fixture.homeScore} - {fixture.awayScore}
+                                      </span>
+                                      {getResultIcon(result)}
+                                    </>
+                                  ) : (
+                                    <span className="text-gray-400 dark:text-gray-500">vs</span>
+                                  )}
+                                </motion.div>
+                              </div>
+                            </Tooltip.Trigger>
+                            <Tooltip.Portal>
+                              <Tooltip.Content
+                                className="bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm"
+                                sideOffset={5}
+                              >
+                                {fixture?.played ? (
+                                  <>
+                                    {homeTeam.name} {fixture.homeScore} - {fixture.awayScore} {awayTeam.name}
+                                    <br />
+                                    {onUpdateResult && 'Click to update points'}
+                                  </>
+                                ) : (
+                                  onUpdateResult ? 'Click to enter points' : 'Game not played'
+                                )}
+                              </Tooltip.Content>
+                            </Tooltip.Portal>
+                          </Tooltip.Root>
+                        </Tooltip.Provider>
                       </td>
                     );
                   })}
@@ -292,6 +341,7 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
           homeTeam={selectedFixture.homeTeam}
           awayTeam={selectedFixture.awayTeam}
           fixture={selectedFixture.fixture}
+          tournament={tournament}
         />
       )}
     </div>

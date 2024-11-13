@@ -28,7 +28,7 @@ export function ParticipantSelector({ tournament, onSelect, variant = 'default' 
   const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
   const [hoveredTeamId, setHoveredTeamId] = useState<string | null>(null);
 
-  const teamStats = useMemo(() => {
+  const playerStats = useMemo(() => {
     return tournament.teams.map(team => {
       const teamFixtures = tournament.fixtures.filter(
         f => f.played && (f.homeTeamId === team.id || f.awayTeamId === team.id)
@@ -115,7 +115,7 @@ export function ParticipantSelector({ tournament, onSelect, variant = 'default' 
           <div className="flex items-center gap-2">
             <User className="w-4 h-4 text-gray-400" />
             <span className="text-gray-900 dark:text-gray-100">
-              {selectedTeam ? selectedTeam.name : 'Select Your Team'}
+              {selectedTeam ? selectedTeam.name : 'Select Your Player'}
             </span>
           </div>
           <ChevronDown className={`
@@ -133,10 +133,10 @@ export function ParticipantSelector({ tournament, onSelect, variant = 'default' 
               exit={{ opacity: 0, y: 8 }}
               transition={{ duration: 0.15 }}
               className="absolute z-50 w-full mt-2 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg"
-              style={{ overflowX: 'hidden' }} // Added this line to prevent horizontal scrolling
+              style={{ overflowX: 'hidden' }}
             >
               <div className="max-h-64 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-gray-100 dark:scrollbar-track-gray-800">
-                {teamStats.map(({ team, wins, draws, losses, form }) => (
+                {playerStats.map(({ team, wins, draws, losses, form }) => (
                   <Tooltip.Root key={team.id}>
                     <Tooltip.Trigger asChild>
                       <motion.button
@@ -150,7 +150,7 @@ export function ParticipantSelector({ tournament, onSelect, variant = 'default' 
                         onMouseEnter={() => setHoveredTeamId(team.id)}
                         onMouseLeave={() => setHoveredTeamId(null)}
                         whileHover={{ x: 4 }}
-                        style={{ maxWidth: '100%' }} // Added this line to ensure content doesn't overflow
+                        style={{ maxWidth: '100%' }}
                       >
                         <div className="flex items-center gap-2">
                           {team.id === selectedTeam?.id && (
