@@ -328,6 +328,7 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
             homeTeam={selectedFixture.homeTeam}
             awayTeam={selectedFixture.awayTeam}
             fixture={selectedFixture.fixture}
+            tournament={tournament} 
           />
         )}
       </div>

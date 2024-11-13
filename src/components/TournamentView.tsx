@@ -62,7 +62,6 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
         
         // Initialize global settings
         updateGlobalSettings({
-          theme: parsedSettings.darkMode ? 'dark' : 'light',
           lowMotion: parsedSettings.lowMotion
         });
       }
@@ -93,10 +92,8 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
         [key]: !prev[key]
       };
 
-      // Immediately update global settings for theme and motion
-      if (key === 'darkMode') {
-        updateGlobalSettings({ theme: !prev.darkMode ? 'dark' : 'light' });
-      } else if (key === 'lowMotion') {
+      // Only update global settings for motion
+      if (key === 'lowMotion') {
         updateGlobalSettings({ lowMotion: !prev.lowMotion });
       }
 
