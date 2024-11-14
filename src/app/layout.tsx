@@ -6,6 +6,7 @@ import { ClientLayout } from '../components/ClientLayout';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata = defaultMetadata;
+export { viewport } from './viewport';
 
 export default function RootLayout({
   children,
@@ -16,7 +17,6 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <head>
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#E63946" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         {/* Script to set initial theme before page load to prevent flash */}

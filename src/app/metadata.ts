@@ -1,6 +1,7 @@
 import { Metadata } from 'next';
 
 const defaultMetadata: Metadata = {
+  metadataBase: new URL('https://rack-n-bag.vercel.app'),
   title: {
     default: 'Rack \'n\' Bag - Tournament Management',
     template: '%s | Rack \'n\' Bag'
@@ -42,16 +43,6 @@ const defaultMetadata: Metadata = {
     description: 'Create and manage tournaments with ease. Track scores, standings, and real-time results.',
     images: ['/og-image.png']
   },
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 1,
-    userScalable: false
-  },
-  themeColor: [
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
-    { media: '(prefers-color-scheme: dark)', color: '#0D1B2A' }
-  ],
   manifest: '/manifest.json',
   icons: {
     icon: '/favicon.ico',
