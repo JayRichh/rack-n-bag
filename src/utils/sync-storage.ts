@@ -1,9 +1,10 @@
-import { SyncSession, SignalingMessage, SESSION_CLEANUP_INTERVAL, SESSION_EXPIRY } from '../types/sync';
+import { SyncSession, SignalingMessage, SESSION_CLEANUP_INTERVAL, SESSION_EXPIRY, MESSAGE_EXPIRY } from '../types/sync';
 
 const SYNC_SESSION_KEY = 'tournament_sync_sessions';
 
 class SyncStorage {
   private cleanupInterval: NodeJS.Timeout | null = null;
+  private lastCleanup: number = 0;
 
   constructor() {
     if (typeof window !== 'undefined') {
@@ -12,18 +13,26 @@ class SyncStorage {
   }
 
   private cleanupExpiredSessions = () => {
+    // Prevent multiple cleanups from running simultaneously
+    if (Date.now() - this.lastCleanup < SESSION_CLEANUP_INTERVAL) {
+      return;
+    }
+
     try {
+      this.lastCleanup = Date.now();
       const sessions = this.getSessions();
       let hasChanges = false;
 
       Object.entries(sessions).forEach(([id, session]) => {
-        // Clean up old messages first
-        session.messages = session.messages.filter(msg => 
-          Date.now() - new Date(msg.timestamp).getTime() < 30000
-        );
+        // Only clean up messages that are definitely expired
+        session.messages = session.messages.filter(msg => {
+          const messageAge = Date.now() - new Date(msg.timestamp).getTime();
+          return messageAge < MESSAGE_EXPIRY;
+        });
 
-        // Then check if session is expired
-        if (Date.now() - new Date(session.lastActive).getTime() > SESSION_EXPIRY) {
+        // Only remove sessions that are inactive and have no connected peers
+        if (Date.now() - new Date(session.lastActive).getTime() > SESSION_EXPIRY &&
+            session.connectedPeers.length === 0) {
           delete sessions[id];
           hasChanges = true;
         }
@@ -63,16 +72,16 @@ class SyncStorage {
   createSession(session: SyncSession): void {
     const sessions = this.getSessions();
     
-    // Clean up any existing session for this tournament
-    if (sessions[session.tournamentId]) {
-      delete sessions[session.tournamentId];
-    }
+    // Preserve existing messages and peers if session exists
+    const existingSession = sessions[session.tournamentId];
     
     sessions[session.tournamentId] = {
       ...session,
-      messages: [],
-      connectedPeers: []
+      messages: existingSession?.messages || [],
+      connectedPeers: existingSession?.connectedPeers || [],
+      lastActive: new Date().toISOString()
     };
+    
     this.saveSessions(sessions);
   }
 
@@ -93,16 +102,20 @@ class SyncStorage {
     const session = sessions[tournamentId];
     
     if (session) {
-      // Remove any old messages of the same type from the same sender
-      const filteredMessages = session.messages.filter(msg => 
-        !(msg.type === message.type && 
-          msg.senderId === message.senderId &&
-          msg.receiverId === message.receiverId)
-      );
+      let filteredMessages = session.messages;
+
+      // Only remove duplicate offers/answers, keep all ICE candidates
+      if (message.type !== 'ice-candidate') {
+        filteredMessages = session.messages.filter(msg => 
+          !(msg.type === message.type && 
+            msg.senderId === message.senderId &&
+            msg.receiverId === message.receiverId)
+        );
+      }
       
-      // Keep only recent messages
+      // Remove only very old messages
       const recentMessages = filteredMessages.filter(msg => 
-        Date.now() - new Date(msg.timestamp).getTime() < 30000
+        Date.now() - new Date(msg.timestamp).getTime() < MESSAGE_EXPIRY
       );
       
       sessions[tournamentId] = {
@@ -120,9 +133,17 @@ class SyncStorage {
     if (!session) return [];
 
     // Get messages intended for this receiver or broadcast messages
-    return session.messages.filter(msg => 
-      !msg.receiverId || msg.receiverId === receiverId
-    );
+    // Sort by timestamp to ensure proper message ordering
+    // Process offers before ICE candidates
+    return session.messages
+      .filter(msg => !msg.receiverId || msg.receiverId === receiverId)
+      .sort((a, b) => {
+        // Prioritize offers and answers over ICE candidates
+        if (a.type === 'ice-candidate' && b.type !== 'ice-candidate') return 1;
+        if (a.type !== 'ice-candidate' && b.type === 'ice-candidate') return -1;
+        // Then sort by timestamp
+        return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+      });
   }
 
   removeSignalingMessage(tournamentId: string, messageTimestamp: string): void {
@@ -133,6 +154,36 @@ class SyncStorage {
       sessions[tournamentId] = {
         ...session,
         messages: session.messages.filter(msg => msg.timestamp !== messageTimestamp),
+        lastActive: new Date().toISOString()
+      };
+      
+      this.saveSessions(sessions);
+    }
+  }
+
+  addConnectedPeer(tournamentId: string, peerId: string): void {
+    const sessions = this.getSessions();
+    const session = sessions[tournamentId];
+    
+    if (session && !session.connectedPeers.includes(peerId)) {
+      sessions[tournamentId] = {
+        ...session,
+        connectedPeers: [...session.connectedPeers, peerId],
+        lastActive: new Date().toISOString()
+      };
+      
+      this.saveSessions(sessions);
+    }
+  }
+
+  removeConnectedPeer(tournamentId: string, peerId: string): void {
+    const sessions = this.getSessions();
+    const session = sessions[tournamentId];
+    
+    if (session) {
+      sessions[tournamentId] = {
+        ...session,
+        connectedPeers: session.connectedPeers.filter(id => id !== peerId),
         lastActive: new Date().toISOString()
       };
       

@@ -3,11 +3,10 @@
 import { motion } from 'framer-motion';
 import { Tournament } from '../../types/tournament';
 import { ParticipantSelector } from '../ParticipantSelector';
-import { Settings, ArrowLeft, Edit, Grid, BarChart2, Table2, Sliders, Eye, Cog, Globe, Wifi, Crown, Loader2, WifiOff, X, AlertCircle } from 'lucide-react';
+import { Settings, ArrowLeft, Edit, Grid, BarChart2, Table2, Eye, Cog, Globe, Wifi, Crown, Loader2, X, AlertCircle } from 'lucide-react';
 import { typography } from '../../lib/design-system';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { useSyncContext } from '../SyncContext';
-import { SyncState } from '../../types/sync';
 
 export type ViewMode = 'STATS' | 'GRID' | 'TABLE';
 
@@ -67,27 +66,24 @@ export function TournamentHeader({
         : 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20';
     }
 
-    const statusStyles: Record<SyncState['status'], { active: string; inactive: string }> = {
-      'connected': {
-        active: 'bg-emerald-500 text-white dark:bg-emerald-600',
-        inactive: 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'
-      },
-      'host': {
-        active: 'bg-blue-500 text-white dark:bg-blue-600',
-        inactive: 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
-      },
-      'connecting': {
-        active: 'bg-yellow-500 text-white dark:bg-yellow-600',
-        inactive: 'text-yellow-600 dark:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/20'
-      },
-      'disconnected': {
-        active: 'bg-gray-500 text-white dark:bg-gray-600',
-        inactive: 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/20'
-      }
-    };
-
-    const style = statusStyles[syncState.status];
-    return isActive ? style.active : style.inactive;
+    switch (syncState.status) {
+      case 'connected':
+        return isActive
+          ? 'bg-emerald-500 text-white dark:bg-emerald-600'
+          : 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20';
+      case 'host':
+        return isActive
+          ? 'bg-blue-500 text-white dark:bg-blue-600'
+          : 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20';
+      case 'connecting':
+        return isActive
+          ? 'bg-yellow-500 text-white dark:bg-yellow-600'
+          : 'text-yellow-600 dark:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/20';
+      default:
+        return isActive
+          ? 'bg-gray-500 text-white dark:bg-gray-600'
+          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/20';
+    }
   };
 
   const getSyncLabel = () => {

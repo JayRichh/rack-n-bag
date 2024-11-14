@@ -1,3 +1,5 @@
+'use client';
+
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { typography } from '../../lib/design-system';
@@ -65,45 +67,54 @@ function SyncSection({ title, icon: Icon, children, tooltip }: SyncSectionProps)
 }
 
 function ConnectionDetails({ syncState }: { syncState: any }) {
-  const getIceStateColor = () => {
+  const getIceStateInfo = () => {
     switch (syncState.iceConnectionState) {
       case 'connected':
-        return 'emerald';
+        return { color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/20' };
       case 'checking':
-        return 'yellow';
+        return { color: 'text-yellow-500', bg: 'bg-yellow-50 dark:bg-yellow-900/20' };
       case 'failed':
-        return 'red';
+        return { color: 'text-red-500', bg: 'bg-red-50 dark:bg-red-900/20' };
       default:
-        return 'gray';
+        return { color: 'text-gray-500', bg: 'bg-gray-50 dark:bg-gray-900/20' };
     }
   };
 
-  const getSignalingStateColor = () => {
+  const getSignalingStateInfo = () => {
     switch (syncState.signalingState) {
       case 'stable':
-        return 'emerald';
+        return { color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/20' };
       case 'have-local-offer':
       case 'have-remote-offer':
-        return 'yellow';
+        return { color: 'text-yellow-500', bg: 'bg-yellow-50 dark:bg-yellow-900/20' };
       case 'closed':
-        return 'red';
+        return { color: 'text-red-500', bg: 'bg-red-50 dark:bg-red-900/20' };
       default:
-        return 'gray';
+        return { color: 'text-gray-500', bg: 'bg-gray-50 dark:bg-gray-900/20' };
     }
   };
+
+  const iceInfo = getIceStateInfo();
+  const signalingInfo = getSignalingStateInfo();
 
   return (
     <div className="mt-4 space-y-2 text-sm">
       {syncState.iceConnectionState && (
-        <div className={`flex items-center gap-2 text-${getIceStateColor()}-500`}>
+        <div className={`flex items-center gap-2 px-2 py-1 rounded ${iceInfo.color} ${iceInfo.bg}`}>
           <Signal className="w-4 h-4" />
           <span>ICE: {syncState.iceConnectionState}</span>
         </div>
       )}
       {syncState.signalingState && (
-        <div className={`flex items-center gap-2 text-${getSignalingStateColor()}-500`}>
+        <div className={`flex items-center gap-2 px-2 py-1 rounded ${signalingInfo.color} ${signalingInfo.bg}`}>
           <Signal className="w-4 h-4" />
           <span>Signaling: {syncState.signalingState}</span>
+        </div>
+      )}
+      {syncState.iceGatheringState && (
+        <div className="flex items-center gap-2 px-2 py-1 rounded text-gray-500 bg-gray-50 dark:bg-gray-900/20">
+          <Signal className="w-4 h-4" />
+          <span>Gathering: {syncState.iceGatheringState}</span>
         </div>
       )}
     </div>
@@ -119,53 +130,66 @@ export function TournamentSync() {
     syncState 
   } = useSyncContext();
 
-  const getStatusColor = () => {
-    if (syncState.error) return 'red';
+  const getStatusInfo = () => {
+    if (syncState.error) {
+      return {
+        color: 'text-red-500 dark:text-red-400',
+        bg: 'bg-red-50 dark:bg-red-900/20',
+        icon: <AlertCircle className="w-4 h-4" />,
+        text: 'Error',
+        iconBg: 'bg-red-100 dark:bg-red-900/30'
+      };
+    }
     
     switch (syncState.status) {
       case 'connected':
-        return 'emerald';
+        return {
+          color: 'text-emerald-500 dark:text-emerald-400',
+          bg: 'bg-emerald-50 dark:bg-emerald-900/20',
+          icon: <Wifi className="w-4 h-4" />,
+          text: 'Connected',
+          iconBg: 'bg-emerald-100 dark:bg-emerald-900/30'
+        };
       case 'host':
-        return 'blue';
+        return {
+          color: 'text-blue-500 dark:text-blue-400',
+          bg: 'bg-blue-50 dark:bg-blue-900/20',
+          icon: <Crown className="w-4 h-4" />,
+          text: 'Hosting',
+          iconBg: 'bg-blue-100 dark:bg-blue-900/30'
+        };
       case 'connecting':
-        return 'yellow';
+        return {
+          color: 'text-yellow-500 dark:text-yellow-400',
+          bg: 'bg-yellow-50 dark:bg-yellow-900/20',
+          icon: <Loader2 className="w-4 h-4 animate-spin" />,
+          text: 'Connecting',
+          iconBg: 'bg-yellow-100 dark:bg-yellow-900/30'
+        };
       default:
-        return 'gray';
+        return {
+          color: 'text-gray-500 dark:text-gray-400',
+          bg: 'bg-gray-50 dark:bg-gray-900/20',
+          icon: <WifiOff className="w-4 h-4" />,
+          text: 'Not Connected',
+          iconBg: 'bg-gray-100 dark:bg-gray-900/30'
+        };
     }
   };
 
-  const getStatusText = () => {
-    if (syncState.error) return 'Error';
-    
-    switch (syncState.status) {
-      case 'connected':
-        return 'Connected';
-      case 'host':
-        return 'Hosting';
-      case 'connecting':
-        return 'Connecting';
-      default:
-        return 'Not Connected';
-    }
-  };
-
-  const getStatusIcon = () => {
-    if (syncState.error) return <AlertCircle className="w-4 h-4" />;
-    
-    switch (syncState.status) {
-      case 'connected':
-        return <Wifi className="w-4 h-4" />;
-      case 'host':
-        return <Crown className="w-4 h-4" />;
-      case 'connecting':
-        return <Loader2 className="w-4 h-4 animate-spin" />;
-      default:
-        return <WifiOff className="w-4 h-4" />;
-    }
-  };
-
+  const statusInfo = getStatusInfo();
   const isTransitioning = syncState.status === 'connecting';
   const isConnected = syncState.status === 'connected' || syncState.status === 'host';
+
+  const handleCleanup = async () => {
+    try {
+      await cleanup();
+    } catch (error) {
+      console.error('Cleanup failed:', error);
+      // Force a page reload if cleanup fails
+      window.location.reload();
+    }
+  };
 
   return (
     <div className="py-6">
@@ -187,10 +211,10 @@ export function TournamentSync() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
-              className={`flex items-center gap-2 text-${getStatusColor()}-500 dark:text-${getStatusColor()}-400 bg-${getStatusColor()}-50 dark:bg-${getStatusColor()}-900/20 px-3 py-1.5 rounded-lg`}
+              className={`flex items-center gap-2 ${statusInfo.color} ${statusInfo.bg} px-3 py-1.5 rounded-lg`}
             >
-              {getStatusIcon()}
-              <span className="text-sm font-medium">{getStatusText()}</span>
+              {statusInfo.icon}
+              <span className="text-sm font-medium">{statusInfo.text}</span>
             </motion.div>
           )}
         </AnimatePresence>
@@ -207,12 +231,12 @@ export function TournamentSync() {
             <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-200 dark:border-gray-700">
               {syncState.status !== 'disconnected' || syncState.error ? (
                 <>
-                  <div className={`p-2 rounded-full bg-${getStatusColor()}-100 dark:bg-${getStatusColor()}-900/30`}>
-                    {getStatusIcon()}
+                  <div className={`p-2 rounded-full ${statusInfo.iconBg}`}>
+                    {statusInfo.icon}
                   </div>
                   <div className="flex-1">
-                    <h4 className={`font-medium text-${getStatusColor()}-600 dark:text-${getStatusColor()}-400`}>
-                      {getStatusText()}
+                    <h4 className={`font-medium ${statusInfo.color}`}>
+                      {statusInfo.text}
                     </h4>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
                       {syncState.error ? (
@@ -234,7 +258,7 @@ export function TournamentSync() {
                     </div>
                   )}
                   <button
-                    onClick={cleanup}
+                    onClick={handleCleanup}
                     className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
                     title="Disconnect"
                   >
