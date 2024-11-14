@@ -57,8 +57,7 @@ export function useTournamentSync(tournamentId?: string) {
     if (!tournamentId) return;
     
     try {
-      const sessions = JSON.parse(localStorage.getItem(SYNC_STORAGE_KEY) || '{}');
-      const session = sessions[tournamentId];
+      const session = storage.getSyncSession(tournamentId);
       
       if (session && Date.now() - new Date(session.lastActive).getTime() < 24 * 60 * 60 * 1000) {
         setIsHost(session.isHost);
@@ -72,8 +71,7 @@ export function useTournamentSync(tournamentId?: string) {
         }
       } else if (session) {
         // Clean up expired session
-        delete sessions[tournamentId];
-        localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(sessions));
+        storage.deleteSyncSession(tournamentId);
       }
     } catch (error) {
       console.error('Failed to load sync session:', error);
@@ -120,8 +118,7 @@ export function useTournamentSync(tournamentId?: string) {
     if (!tournamentId) return;
     
     try {
-      const sessions = JSON.parse(localStorage.getItem(SYNC_STORAGE_KEY) || '{}');
-      sessions[tournamentId] = {
+      const session: SyncSession = {
         id: tournamentId,
         isHost,
         peers: Array.from(peerConnectionsRef.current.keys()),
@@ -130,7 +127,7 @@ export function useTournamentSync(tournamentId?: string) {
         offer,
         hostId: isHost ? tournamentId : syncState.hostId
       };
-      localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(sessions));
+      storage.saveSyncSession(session);
     } catch (error) {
       console.error('Failed to save sync session:', error);
     }
@@ -358,6 +355,14 @@ export function useTournamentSync(tournamentId?: string) {
     if (!tournamentId) return;
     
     try {
+      // First, cleanup any existing session
+      storage.deleteSyncSession(tournamentId);
+      peerConnectionsRef.current.forEach(peer => {
+        peer.connection.close();
+        peer.dataChannel.close();
+      });
+      peerConnectionsRef.current.clear();
+
       setSyncState(prev => ({
         ...prev,
         status: 'connecting'
@@ -381,8 +386,17 @@ export function useTournamentSync(tournamentId?: string) {
         id: sessionId
       });
 
-      // Store the offer for participants
-      saveSyncSession(offer);
+      // Store the session with the offer
+      const session: SyncSession = {
+        id: tournamentId,
+        isHost: true,
+        peers: [sessionId],
+        tournamentId,
+        lastActive: new Date().toISOString(),
+        offer,
+        hostId: tournamentId
+      };
+      storage.saveSyncSession(session);
       
       setSyncState(prev => ({
         ...prev,
@@ -413,12 +427,18 @@ export function useTournamentSync(tournamentId?: string) {
       }));
 
       // Get the host's session info
-      const sessions = JSON.parse(localStorage.getItem(SYNC_STORAGE_KEY) || '{}');
-      const hostSession = sessions[tournamentId];
+      const session = storage.getSyncSession(tournamentId);
       
-      if (!hostSession?.offer || !hostSession?.hostId) {
+      if (!session?.offer || !session?.hostId || !session.isHost) {
         throw new Error('No active host session found');
       }
+
+      // First, cleanup any existing connections
+      peerConnectionsRef.current.forEach(peer => {
+        peer.connection.close();
+        peer.dataChannel.close();
+      });
+      peerConnectionsRef.current.clear();
 
       const peerConnection = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -429,7 +449,7 @@ export function useTournamentSync(tournamentId?: string) {
       };
       
       // Set the host's offer
-      await peerConnection.setRemoteDescription(new RTCSessionDescription(hostSession.offer));
+      await peerConnection.setRemoteDescription(new RTCSessionDescription(session.offer));
       
       // Create and set answer
       const answer = await peerConnection.createAnswer();
@@ -441,11 +461,23 @@ export function useTournamentSync(tournamentId?: string) {
         id: tournamentId
       });
 
+      setIsHost(false);
       setSyncState(prev => ({
         ...prev,
-        hostId: hostSession.hostId
+        hostId: session.hostId
       }));
       
+      // Save our session state
+      const clientSession: SyncSession = {
+        id: tournamentId,
+        isHost: false,
+        peers: [session.hostId],
+        tournamentId,
+        lastActive: new Date().toISOString(),
+        hostId: session.hostId
+      };
+      storage.saveSyncSession(clientSession);
+
       updateConnectionState();
       showToast('Successfully joined sync session!', 'success');
     } catch (error) {
