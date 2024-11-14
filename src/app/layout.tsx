@@ -3,6 +3,8 @@ import { Inter } from 'next/font/google';
 import defaultMetadata from './metadata';
 import { ClientLayout } from '../components/ClientLayout';
 
+import { Analytics } from "@vercel/analytics/react"
+
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata = defaultMetadata;
@@ -56,6 +58,8 @@ export default function RootLayout({
         </ClientLayout>
 
         <div id="pwa-install-prompt" className="hidden fixed bottom-4 left-4 z-50" />
+
+        <Analytics />
       </body>
     </html>
   );
