@@ -10,12 +10,12 @@ import {
 } from '../types/sync';
 
 class SyncStorage {
-  private cleanupInterval: NodeJS.Timeout | null = null;
+  private cleanupInterval: number | null = null;
   private lastCleanup: number = 0;
 
   constructor() {
     if (typeof window !== 'undefined') {
-      this.cleanupInterval = setInterval(this.cleanupExpiredSessions, SESSION_CLEANUP_INTERVAL);
+      this.cleanupInterval = window.setInterval(this.cleanupExpiredSessions, SESSION_CLEANUP_INTERVAL);
     }
   }
 
@@ -34,13 +34,14 @@ class SyncStorage {
         const hostLastPing = new Date(session.metadata.lastHostPing).getTime();
         const isHostActive = Date.now() - hostLastPing < HOST_TIMEOUT;
         
-        if (session.hostStatus === 'active' && !isHostActive) {
+        if ((session.hostStatus === 'active' || session.hostStatus === 'ready') && !isHostActive) {
           session.hostStatus = 'inactive';
+          session.metadata.readyForConnections = false;
           hasChanges = true;
         }
 
         // Clean up messages based on session activity
-        const messageExpiry = session.hostStatus === 'active' ? MESSAGE_EXPIRY * 2 : MESSAGE_EXPIRY;
+        const messageExpiry = session.hostStatus !== 'active' && session.hostStatus !== 'ready' ? MESSAGE_EXPIRY : MESSAGE_EXPIRY * 2;
         session.messages = session.messages.filter(msg => {
           const messageAge = Date.now() - new Date(msg.timestamp).getTime();
           return messageAge < messageExpiry;
@@ -102,6 +103,7 @@ class SyncStorage {
       
       if (!isHostActive) {
         session.hostStatus = 'inactive';
+        session.metadata.readyForConnections = false;
         sessions[tournamentId] = session;
         this.saveSessions(sessions);
       }
@@ -124,6 +126,7 @@ class SyncStorage {
       hostStatus: 'active',
       metadata: {
         ...session.metadata,
+        readyForConnections: false,
         lastHostPing: new Date().toISOString()
       }
     };
@@ -147,7 +150,7 @@ class SyncStorage {
     const sessions = this.getSessions();
     const session = sessions[tournamentId];
     
-    if (session) {
+    if (session && session.hostStatus !== 'inactive') {
       let filteredMessages = session.messages;
 
       // For offers and answers, only keep the most recent one between the same peers
@@ -160,7 +163,7 @@ class SyncStorage {
       }
       
       // Keep messages based on session activity
-      const messageExpiry = session.hostStatus === 'active' ? MESSAGE_EXPIRY * 2 : MESSAGE_EXPIRY;
+      const messageExpiry = (session.hostStatus !== 'active' && session.hostStatus !== 'ready') ? MESSAGE_EXPIRY : MESSAGE_EXPIRY * 2;
       const recentMessages = filteredMessages.filter(msg => {
         const messageAge = Date.now() - new Date(msg.timestamp).getTime();
         return messageAge < messageExpiry;
@@ -178,15 +181,18 @@ class SyncStorage {
 
   getSignalingMessages(tournamentId: string, receiverId: string): SignalingMessage[] {
     const session = this.getSession(tournamentId);
-    if (!session || session.hostStatus !== 'active') return [];
+    if (!session || session.hostStatus === 'inactive') return [];
 
     // Get messages intended for this receiver or broadcast messages
     // Sort by timestamp to ensure proper message ordering
-    // Process offers and answers before ICE candidates
+    // Process ready signals first, then offers and answers, then ICE candidates
     return session.messages
       .filter(msg => !msg.receiverId || msg.receiverId === receiverId)
       .sort((a, b) => {
-        // Prioritize offers and answers over ICE candidates
+        // Prioritize ready signals
+        if (a.type === 'ready' && b.type !== 'ready') return -1;
+        if (a.type !== 'ready' && b.type === 'ready') return 1;
+        // Then prioritize offers and answers over ICE candidates
         if (a.type === 'ice-candidate' && (b.type === 'offer' || b.type === 'answer')) return 1;
         if ((a.type === 'offer' || a.type === 'answer') && b.type === 'ice-candidate') return -1;
         // Then sort by timestamp
@@ -247,7 +253,7 @@ class SyncStorage {
 
   cleanup(): void {
     if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
+      window.clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
     }
   }

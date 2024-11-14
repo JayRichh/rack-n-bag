@@ -10,7 +10,10 @@ import {
   CONNECTION_TIMEOUT,
   SIGNALING_CHECK_INTERVAL,
   ICE_GATHERING_TIMEOUT,
-  HOST_PING_INTERVAL
+  HOST_PING_INTERVAL,
+  RECONNECT_DELAY,
+  MAX_RECONNECT_ATTEMPTS,
+  HOST_READY_TIMEOUT
 } from '../types/sync';
 
 type ConnectionState = SyncState['status'];
@@ -35,6 +38,9 @@ export class RTCManager {
   private iceGatheringTimeout: NodeJS.Timeout | null = null;
   private pendingSignalingPromise: Promise<void> | null = null;
   private polite: boolean;
+  private reconnectAttempts: number = 0;
+  private reconnectTimeout: NodeJS.Timeout | null = null;
+  private hostReadyTimeout: NodeJS.Timeout | null = null;
 
   constructor(tournamentId: string, peerId: string, isHost: boolean) {
     this.tournamentId = tournamentId;
@@ -46,6 +52,9 @@ export class RTCManager {
   public getConnectionState(): ConnectionState {
     if (this.dataChannel?.readyState === 'open') {
       return this.isHost ? 'host' : 'connected';
+    }
+    if (this.isHost && this.peerConnection?.iceGatheringState === 'complete') {
+      return 'awaiting_connections';
     }
     if (this.peerConnection?.connectionState === 'connecting' || 
         this.peerConnection?.iceGatheringState === 'gathering' ||
@@ -63,7 +72,7 @@ export class RTCManager {
       if (session) {
         syncStorage.updateSession(this.tournamentId, {
           ...session,
-          hostStatus: 'active',
+          hostStatus: session.metadata.readyForConnections ? 'ready' : 'active',
           metadata: {
             ...session.metadata,
             lastHostPing: new Date().toISOString()
@@ -103,16 +112,21 @@ export class RTCManager {
       if (this.peerConnection?.iceConnectionState === 'failed') {
         if (this.isHost) {
           this.peerConnection.restartIce();
+        } else {
+          this.handleConnectionFailure('ICE connection failed', true);
         }
-        this.handleConnectionFailure('ICE connection failed');
       } else if (this.peerConnection?.iceConnectionState === 'connected') {
         this.clearConnectionTimeout();
+        this.reconnectAttempts = 0;
       }
 
       this.stateCallback?.(
         this.getConnectionState(),
         undefined,
-        { iceConnectionState: this.peerConnection?.iceConnectionState }
+        { 
+          iceConnectionState: this.peerConnection?.iceConnectionState,
+          reconnectAttempts: this.reconnectAttempts
+        }
       );
     };
 
@@ -128,7 +142,7 @@ export class RTCManager {
             if (this.isHost) {
               this.peerConnection.restartIce();
             } else {
-              this.handleConnectionFailure('ICE gathering timed out');
+              this.handleConnectionFailure('ICE gathering timed out', true);
             }
           }
         }, ICE_GATHERING_TIMEOUT);
@@ -136,6 +150,10 @@ export class RTCManager {
         if (this.iceGatheringTimeout) {
           clearTimeout(this.iceGatheringTimeout);
           this.iceGatheringTimeout = null;
+        }
+        
+        if (this.isHost) {
+          this.signalHostReady();
         }
       }
 
@@ -182,7 +200,7 @@ export class RTCManager {
         console.error('Negotiation failed:', error);
         this.isNegotiating = false;
         this.makingOffer = false;
-        this.handleConnectionFailure('Negotiation failed');
+        this.handleConnectionFailure('Negotiation failed', true);
       } finally {
         this.makingOffer = false;
       }
@@ -202,6 +220,31 @@ export class RTCManager {
     }
   }
 
+  private signalHostReady() {
+    if (!this.isHost) return;
+
+    const session = syncStorage.getSession(this.tournamentId);
+    if (session) {
+      syncStorage.updateSession(this.tournamentId, {
+        ...session,
+        hostStatus: 'ready',
+        metadata: {
+          ...session.metadata,
+          readyForConnections: true,
+          lastHostPing: new Date().toISOString()
+        }
+      });
+
+      const message: SignalingMessage = {
+        type: 'ready',
+        senderId: this.peerId,
+        timestamp: new Date().toISOString(),
+        data: { ready: true }
+      };
+      syncStorage.addSignalingMessage(this.tournamentId, message);
+    }
+  }
+
   private setupDataChannel(channel: RTCDataChannel) {
     this.dataChannel = channel;
 
@@ -209,6 +252,7 @@ export class RTCManager {
       console.log('DataChannel opened');
       this.stateCallback?.(this.isHost ? 'host' : 'connected');
       this.clearConnectionTimeout();
+      this.reconnectAttempts = 0;
       
       if (this.isHost) {
         syncStorage.addConnectedPeer(this.tournamentId, this.peerId);
@@ -219,13 +263,16 @@ export class RTCManager {
     channel.onclose = () => {
       console.log('DataChannel closed');
       if (!this.isClosing) {
-        this.handleConnectionFailure('Data channel closed unexpectedly');
+        this.handleConnectionFailure('Data channel closed unexpectedly', true);
+      } else {
+        // Ensure UI state is reset even when closing normally
+        this.stateCallback?.('disconnected');
       }
     };
 
     channel.onerror = (error) => {
       console.error('DataChannel error:', error);
-      this.handleConnectionFailure('Data channel error occurred');
+      this.handleConnectionFailure('Data channel error occurred', true);
     };
 
     channel.onmessage = (event) => {
@@ -242,7 +289,7 @@ export class RTCManager {
     this.clearConnectionTimeout();
     this.connectionTimeout = setTimeout(() => {
       if (this.dataChannel?.readyState !== 'open') {
-        this.handleConnectionFailure('Connection timeout');
+        this.handleConnectionFailure('Connection timeout', true);
       }
     }, CONNECTION_TIMEOUT);
   }
@@ -254,12 +301,26 @@ export class RTCManager {
     }
   }
 
-  private async handleConnectionFailure(reason: string) {
+  private async handleConnectionFailure(reason: string, shouldReconnect: boolean = false) {
     if (this.isClosing) return;
 
     console.log(`Connection failed: ${reason}`);
-    this.stateCallback?.('disconnected', reason);
-    await this.cleanup();
+    
+    if (shouldReconnect && this.reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+      this.reconnectAttempts++;
+      console.log(`Attempting reconnection (${this.reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+      
+      await this.cleanup(false);
+      
+      this.reconnectTimeout = setTimeout(() => {
+        this.connect();
+      }, RECONNECT_DELAY);
+      
+      this.stateCallback?.('connecting', undefined, { reconnectAttempts: this.reconnectAttempts });
+    } else {
+      this.stateCallback?.('disconnected', reason);
+      await this.cleanup(true);
+    }
   }
 
   private async processQueuedCandidates() {
@@ -315,6 +376,14 @@ export class RTCManager {
 
     try {
       switch (message.type) {
+        case 'ready': {
+          if (!this.isHost && message.data && (message.data as any).ready) {
+            // Host is ready, proceed with connection
+            this.connect();
+          }
+          break;
+        }
+
         case 'offer': {
           const offerCollision = 
             message.type === 'offer' &&
@@ -371,7 +440,7 @@ export class RTCManager {
     } catch (error) {
       console.error('Error handling signaling message:', error);
       if (!this.ignoreOffer) {
-        this.handleConnectionFailure('Signaling error occurred');
+        this.handleConnectionFailure('Signaling error occurred', true);
       }
     }
   }
@@ -386,6 +455,17 @@ export class RTCManager {
       this.pendingCandidates = [];
       this.pendingSignalingPromise = null;
       
+      // Clear any existing timeouts
+      this.clearConnectionTimeout();
+      if (this.reconnectTimeout) {
+        clearTimeout(this.reconnectTimeout);
+        this.reconnectTimeout = null;
+      }
+      if (this.hostReadyTimeout) {
+        clearTimeout(this.hostReadyTimeout);
+        this.hostReadyTimeout = null;
+      }
+
       this.setupPeerConnection();
       this.startSignallingCheck();
       this.startConnectionTimeout();
@@ -404,18 +484,26 @@ export class RTCManager {
           metadata: {
             version: SYNC_VERSION,
             created: new Date().toISOString(),
-            lastHostPing: new Date().toISOString()
+            lastHostPing: new Date().toISOString(),
+            readyForConnections: false
           }
         };
         syncStorage.createSession(session);
+      } else {
+        // Wait for host ready signal
+        this.hostReadyTimeout = setTimeout(() => {
+          if (this.getConnectionState() === 'connecting') {
+            this.handleConnectionFailure('Host not ready', true);
+          }
+        }, HOST_READY_TIMEOUT);
       }
     } catch (error) {
       console.error('Connection setup failed:', error);
-      this.handleConnectionFailure('Failed to initialize connection');
+      this.handleConnectionFailure('Failed to initialize connection', true);
     }
   }
 
-  async cleanup() {
+  async cleanup(complete: boolean = true) {
     this.isClosing = true;
 
     if (this.signallingCheckInterval) {
@@ -431,6 +519,16 @@ export class RTCManager {
     if (this.iceGatheringTimeout) {
       clearTimeout(this.iceGatheringTimeout);
       this.iceGatheringTimeout = null;
+    }
+
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+      this.reconnectTimeout = null;
+    }
+
+    if (this.hostReadyTimeout) {
+      clearTimeout(this.hostReadyTimeout);
+      this.hostReadyTimeout = null;
     }
 
     this.clearConnectionTimeout();
@@ -452,10 +550,16 @@ export class RTCManager {
     this.pendingCandidates = [];
     this.pendingSignalingPromise = null;
 
-    if (this.isHost) {
-      syncStorage.deleteSession(this.tournamentId);
-    } else {
-      syncStorage.removeConnectedPeer(this.tournamentId, this.peerId);
+    // Always ensure UI state is reset to disconnected
+    this.stateCallback?.('disconnected');
+
+    if (complete) {
+      this.reconnectAttempts = 0;
+      if (this.isHost) {
+        syncStorage.deleteSession(this.tournamentId);
+      } else {
+        syncStorage.removeConnectedPeer(this.tournamentId, this.peerId);
+      }
     }
   }
 

@@ -180,6 +180,7 @@ export function TournamentSync() {
   const statusInfo = getStatusInfo();
   const isTransitioning = syncState.status === 'connecting';
   const isConnected = syncState.status === 'connected' || syncState.status === 'host';
+  const showDisconnectButton = syncState.status !== 'disconnected' || syncState.error;
 
   const handleCleanup = async () => {
     try {
@@ -205,16 +206,25 @@ export function TournamentSync() {
         </div>
 
         <AnimatePresence mode="wait">
-          {(syncState.status !== 'disconnected' || syncState.error) && (
+          {showDisconnectButton && (
             <motion.div
-              key={syncState.status + (syncState.error ? '-error' : '')}
+              key="disconnect-button"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
-              className={`flex items-center gap-2 ${statusInfo.color} ${statusInfo.bg} px-3 py-1.5 rounded-lg`}
+              className="flex items-center gap-2"
             >
-              {statusInfo.icon}
-              <span className="text-sm font-medium">{statusInfo.text}</span>
+              <motion.button
+                onClick={handleCleanup}
+                className="flex items-center gap-2 px-4 py-2 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-lg border border-red-200 dark:border-red-800 transition-colors"
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+              >
+                <X className="w-5 h-5" />
+                <span className="font-medium">
+                  {isConnected ? 'Disconnect' : isTransitioning ? 'Cancel' : 'Close'}
+                </span>
+              </motion.button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -257,13 +267,6 @@ export function TournamentSync() {
                       <span>Last sync: {new Date(syncState.lastSync).toLocaleTimeString()}</span>
                     </div>
                   )}
-                  <button
-                    onClick={handleCleanup}
-                    className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
-                    title="Disconnect"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
                 </>
               ) : (
                 <>
