@@ -90,18 +90,18 @@ export const DEFAULT_CHANNEL_CONFIG: DataChannelConfig = {
 export const SYNC_VERSION = 1;
 
 // Timeouts and intervals (in milliseconds)
-export const CONNECTION_TIMEOUT = 60000;        // 1 minute (increased from 30s)
+export const CONNECTION_TIMEOUT = 120000;       // 2 minutes (increased for more reliable connections)
 export const SIGNALING_CHECK_INTERVAL = 1000;   // 1 second
-export const PING_INTERVAL = 15000;            // 15 seconds (decreased from 30s for more responsive health checks)
+export const PING_INTERVAL = 15000;             // 15 seconds
 export const HEALTH_CHECK_INTERVAL = 5000;      // 5 seconds
-export const SESSION_CLEANUP_INTERVAL = 60000;  // 1 minute
-export const SESSION_EXPIRY = 10 * 60 * 1000;  // 10 minutes (increased from 5m)
-export const MESSAGE_EXPIRY = 2 * 60 * 1000;   // 2 minutes
-export const RECONNECT_DELAY = 2000;           // 2 seconds
-export const MAX_RECONNECT_ATTEMPTS = 3;       // Maximum number of reconnection attempts
+export const SESSION_CLEANUP_INTERVAL = 300000;  // 5 minutes (increased to reduce cleanup frequency)
+export const SESSION_EXPIRY = 30 * 60 * 1000;   // 30 minutes (increased for longer sessions)
+export const MESSAGE_EXPIRY = 5 * 60 * 1000;    // 5 minutes (increased for more reliable signaling)
+export const RECONNECT_DELAY = 2000;            // 2 seconds
+export const MAX_RECONNECT_ATTEMPTS = 5;        // Increased maximum reconnection attempts
 
 // WebRTC configuration constants
-export const MAX_MESSAGE_SIZE = 16384;         // 16KB max message size
-export const ICE_GATHERING_TIMEOUT = 5000;     // 5 seconds timeout for ICE gathering
-export const SIGNALING_TIMEOUT = 10000;        // 10 seconds timeout for signaling
-export const MAX_BUFFERED_MESSAGES = 100;      // Maximum number of messages to buffer
+export const MAX_MESSAGE_SIZE = 16384;          // 16KB max message size
+export const ICE_GATHERING_TIMEOUT = 10000;     // 10 seconds timeout for ICE gathering (increased)
+export const SIGNALING_TIMEOUT = 20000;         // 20 seconds timeout for signaling (increased)
+export const MAX_BUFFERED_MESSAGES = 100;       // Maximum number of messages to buffer

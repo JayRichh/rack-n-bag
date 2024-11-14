@@ -1,11 +1,10 @@
 'use client';
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { Tournament } from '../types/tournament';
 import { SyncState } from '../types/sync';
-import { RTCManager } from '../utils/rtc-manager';
-import { syncStorage } from '../utils/sync-storage';
 import { useToast } from './ToastContext';
+import { useSyncSession } from '../hooks/useSyncSession';
 
 interface SyncContextType {
   createSyncSession: () => Promise<void>;
@@ -18,6 +17,8 @@ interface SyncContextType {
 
 const SyncContext = createContext<SyncContextType | null>(null);
 
+const SYNC_STATE_KEY = 'tournament_sync_state';
+
 export function SyncProvider({ 
   children,
   tournamentId 
@@ -26,172 +27,116 @@ export function SyncProvider({
   tournamentId: string;
 }) {
   const { showToast } = useToast();
-  const [rtcManager, setRtcManager] = useState<RTCManager | null>(null);
-  const [isHost, setIsHost] = useState(false);
-  const [syncState, setSyncState] = useState<SyncState>({
-    status: 'disconnected',
-    connectedPeers: 0
-  });
-
-  const cleanup = useCallback(async () => {
-    if (rtcManager) {
-      await rtcManager.cleanup();
-      setRtcManager(null);
+  const [syncState, setSyncState] = useState<SyncState>(() => {
+    // Try to restore previous sync state
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem(SYNC_STATE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          // Only restore if it's for the same tournament
+          if (parsed.tournamentId === tournamentId) {
+            return parsed.state;
+          }
+        }
+      } catch (error) {
+        console.error('Failed to restore sync state:', error);
+      }
     }
-    setSyncState({
+    return {
       status: 'disconnected',
       connectedPeers: 0
-    });
-    setIsHost(false);
-  }, [rtcManager]);
-
-  useEffect(() => {
-    return () => {
-      cleanup();
     };
-  }, [cleanup]);
+  });
 
-  const handleStateChange = useCallback((
-    status: SyncState['status'],
-    error?: string,
-    updates: Partial<SyncState> = {}
-  ) => {
-    setSyncState(prev => {
-      const newState = {
-        ...prev,
-        status,
-        error,
-        ...updates
-      };
-
-      // Update connected peers count from storage
-      if (tournamentId) {
-        const session = syncStorage.getSession(tournamentId);
-        if (session) {
-          newState.connectedPeers = session.connectedPeers.length;
-        }
+  // Save sync state changes
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(SYNC_STATE_KEY, JSON.stringify({
+          tournamentId,
+          state: syncState
+        }));
+      } catch (error) {
+        console.error('Failed to save sync state:', error);
       }
-
-      return newState;
-    });
-
-    if (error) {
-      showToast(error, 'error');
-      cleanup();
     }
-  }, [tournamentId, cleanup, showToast]);
+  }, [tournamentId, syncState]);
+
+  const handleStateChange = useCallback((newState: SyncState) => {
+    setSyncState(newState);
+  }, []);
+
+  const handleMessage = useCallback((message: any) => {
+    if (message.type === 'tournament-update') {
+      setSyncState(prev => ({
+        ...prev,
+        lastSync: message.timestamp
+      }));
+    }
+  }, []);
+
+  const handleError = useCallback((error: string) => {
+    showToast(error, 'error');
+  }, [showToast]);
+
+  const {
+    createSession,
+    joinSession,
+    sendMessage,
+    cleanup,
+    isHost,
+    isConnected
+  } = useSyncSession({
+    tournamentId,
+    onStateChange: handleStateChange,
+    onMessage: handleMessage,
+    onError: handleError
+  });
 
   const createSyncSession = useCallback(async () => {
-    if (!tournamentId) return;
-
     try {
-      await cleanup();
-
       setSyncState(prev => ({
         ...prev,
         status: 'connecting'
       }));
 
-      // Create session in storage
-      const session = {
-        id: tournamentId,
-        tournamentId,
-        hostId: tournamentId,
-        lastActive: new Date().toISOString(),
-        messages: [],
-        connectedPeers: []
-      };
-      syncStorage.createSession(session);
-
-      // Create RTC manager
-      const manager = new RTCManager(tournamentId, tournamentId, true);
-      setRtcManager(manager);
-
-      // Setup callbacks
-      manager.onStateChange(handleStateChange);
-
-      manager.onMessage((message: any) => {
-        if (message.type === 'tournament-update') {
-          setSyncState(prev => ({
-            ...prev,
-            lastSync: message.timestamp
-          }));
-        }
-      });
-
-      // Start connection
-      await manager.connect();
-      setIsHost(true);
-      syncStorage.addConnectedPeer(tournamentId, tournamentId);
+      await createSession();
       showToast('Created sync session', 'success');
-
     } catch (error) {
       console.error('Failed to create sync session:', error);
       showToast('Failed to create sync session', 'error');
-      cleanup();
     }
-  }, [tournamentId, cleanup, handleStateChange, showToast]);
+  }, [createSession, showToast]);
 
   const joinSyncSession = useCallback(async () => {
-    if (!tournamentId) return;
-
     try {
-      await cleanup();
-
       setSyncState(prev => ({
         ...prev,
         status: 'connecting'
       }));
 
-      // Get existing session
-      const session = syncStorage.getSession(tournamentId);
-      if (!session?.hostId) {
-        throw new Error('No active host session found');
-      }
-
-      const peerId = `peer-${Date.now()}`;
-
-      // Create RTC manager
-      const manager = new RTCManager(tournamentId, peerId, false);
-      setRtcManager(manager);
-
-      // Setup callbacks
-      manager.onStateChange(handleStateChange);
-
-      manager.onMessage((message: any) => {
-        if (message.type === 'tournament-update') {
-          setSyncState(prev => ({
-            ...prev,
-            lastSync: message.timestamp
-          }));
-        }
-      });
-
-      // Start connection
-      await manager.connect();
-      setIsHost(false);
-      syncStorage.addConnectedPeer(tournamentId, peerId);
+      await joinSession();
       showToast('Joined sync session', 'success');
-
     } catch (error) {
       console.error('Failed to join sync session:', error);
       showToast('Failed to join sync session', 'error');
-      cleanup();
+      if (error instanceof Error) {
+        showToast(error.message, 'error');
+      }
     }
-  }, [tournamentId, cleanup, handleStateChange, showToast]);
+  }, [joinSession, showToast]);
 
   const broadcastUpdate = useCallback((tournament: Tournament) => {
-    if (!tournamentId || !rtcManager) return;
+    if (!isConnected) return;
 
     try {
-      const message = {
-        type: 'tournament-update' as const,
+      sendMessage({
+        type: 'tournament-update',
         data: tournament,
         senderId: tournamentId,
         timestamp: new Date().toISOString()
-      };
-
-      rtcManager.sendMessage(message);
+      });
 
       setSyncState(prev => ({
         ...prev,
@@ -201,7 +146,30 @@ export function SyncProvider({
       console.error('Failed to broadcast update:', error);
       showToast('Failed to send update', 'error');
     }
-  }, [tournamentId, rtcManager, showToast]);
+  }, [tournamentId, isConnected, sendMessage, showToast]);
+
+  // Auto-reconnect on page visibility change
+  useEffect(() => {
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible' && syncState.status === 'disconnected') {
+        // Try to reconnect using the previous role
+        try {
+          if (isHost) {
+            await createSession();
+          } else {
+            await joinSession();
+          }
+        } catch (error) {
+          console.error('Auto-reconnect failed:', error);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [syncState.status, isHost, createSession, joinSession]);
 
   const value = {
     createSyncSession,

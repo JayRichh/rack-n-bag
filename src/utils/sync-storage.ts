@@ -24,16 +24,30 @@ class SyncStorage {
       let hasChanges = false;
 
       Object.entries(sessions).forEach(([id, session]) => {
+        // Keep messages for active sessions longer
+        const messageExpiry = session.connectedPeers.length > 0 ? 
+          MESSAGE_EXPIRY * 2 : // Double expiry time for active sessions
+          MESSAGE_EXPIRY;
+
         // Only clean up messages that are definitely expired
         session.messages = session.messages.filter(msg => {
           const messageAge = Date.now() - new Date(msg.timestamp).getTime();
-          return messageAge < MESSAGE_EXPIRY;
+          return messageAge < messageExpiry;
         });
 
-        // Only remove sessions that are inactive and have no connected peers
-        if (Date.now() - new Date(session.lastActive).getTime() > SESSION_EXPIRY &&
-            session.connectedPeers.length === 0) {
+        // Only remove sessions that are:
+        // 1. Inactive for longer than SESSION_EXPIRY
+        // 2. Have no connected peers
+        // 3. Have no pending messages
+        const sessionAge = Date.now() - new Date(session.lastActive).getTime();
+        if (sessionAge > SESSION_EXPIRY && 
+            session.connectedPeers.length === 0 &&
+            session.messages.length === 0) {
           delete sessions[id];
+          hasChanges = true;
+        } else if (session.messages.length !== sessions[id].messages.length) {
+          // Update session if we cleaned up any messages
+          sessions[id] = session;
           hasChanges = true;
         }
       });
@@ -104,8 +118,8 @@ class SyncStorage {
     if (session) {
       let filteredMessages = session.messages;
 
-      // Only remove duplicate offers/answers, keep all ICE candidates
-      if (message.type !== 'ice-candidate') {
+      // For offers and answers, only keep the most recent one between the same peers
+      if (message.type === 'offer' || message.type === 'answer') {
         filteredMessages = session.messages.filter(msg => 
           !(msg.type === message.type && 
             msg.senderId === message.senderId &&
@@ -113,10 +127,14 @@ class SyncStorage {
         );
       }
       
-      // Remove only very old messages
-      const recentMessages = filteredMessages.filter(msg => 
-        Date.now() - new Date(msg.timestamp).getTime() < MESSAGE_EXPIRY
-      );
+      // Keep all recent ICE candidates
+      const recentMessages = filteredMessages.filter(msg => {
+        const messageAge = Date.now() - new Date(msg.timestamp).getTime();
+        // Keep messages longer if there are connected peers
+        const expiry = session.connectedPeers.length > 0 ? 
+          MESSAGE_EXPIRY * 2 : MESSAGE_EXPIRY;
+        return messageAge < expiry;
+      });
       
       sessions[tournamentId] = {
         ...session,
@@ -139,8 +157,8 @@ class SyncStorage {
       .filter(msg => !msg.receiverId || msg.receiverId === receiverId)
       .sort((a, b) => {
         // Prioritize offers and answers over ICE candidates
-        if (a.type === 'ice-candidate' && b.type !== 'ice-candidate') return 1;
-        if (a.type !== 'ice-candidate' && b.type === 'ice-candidate') return -1;
+        if (a.type === 'ice-candidate' && (b.type === 'offer' || b.type === 'answer')) return 1;
+        if ((a.type === 'offer' || a.type === 'answer') && b.type === 'ice-candidate') return -1;
         // Then sort by timestamp
         return new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
       });
