@@ -17,7 +17,8 @@ import {
   Minus as MinusIcon,
   BarChart3,
   Calendar,
-  Users
+  Users,
+  UserCircle2
 } from 'lucide-react';
 import * as Tooltip from '@radix-ui/react-tooltip';
 
@@ -37,22 +38,32 @@ export function TournamentStats({ tournament, participantTeamId }: TournamentSta
 
     const playedFixtures = teamFixtures.filter(f => f.played);
     const totalFixtures = teamFixtures.length;
+    
+    const isPointBased = tournament.pointsConfig.type === 'POINTS';
+    
     const wins = playedFixtures.filter(f => {
-      const isHome = f.homeTeamId === team.id;
-      const teamScore = isHome ? f.homeScore! : f.awayScore!;
-      const opponentScore = isHome ? f.awayScore! : f.homeScore!;
-      return teamScore > opponentScore;
+      if (isPointBased) {
+        if (f.homeScore === undefined || f.awayScore === undefined) return false;
+        const isHome = f.homeTeamId === team.id;
+        const teamScore = isHome ? f.homeScore : f.awayScore;
+        const opponentScore = isHome ? f.awayScore : f.homeScore;
+        return teamScore > opponentScore;
+      } else {
+        return f.winner === team.id;
+      }
     }).length;
 
-    const pointsScored = playedFixtures.reduce((sum, f) => {
+    const pointsScored = isPointBased ? playedFixtures.reduce((sum, f) => {
+      if (f.homeScore === undefined || f.awayScore === undefined) return sum;
       const isHome = f.homeTeamId === team.id;
-      return sum + (isHome ? f.homeScore! : f.awayScore!);
-    }, 0);
+      return sum + (isHome ? f.homeScore : f.awayScore);
+    }, 0) : wins;
 
-    const pointsConceded = playedFixtures.reduce((sum, f) => {
+    const pointsConceded = isPointBased ? playedFixtures.reduce((sum, f) => {
+      if (f.homeScore === undefined || f.awayScore === undefined) return sum;
       const isHome = f.homeTeamId === team.id;
-      return sum + (isHome ? f.awayScore! : f.homeScore!);
-    }, 0);
+      return sum + (isHome ? f.awayScore : f.homeScore);
+    }, 0) : playedFixtures.length - wins;
 
     const position = tournament.teams
       .sort((a, b) => b.points - a.points)
@@ -65,13 +76,19 @@ export function TournamentStats({ tournament, participantTeamId }: TournamentSta
     const recentForm = playedFixtures
       .slice(-5)
       .map(f => {
-        const isHome = f.homeTeamId === team.id;
-        const teamScore = isHome ? f.homeScore! : f.awayScore!;
-        const opponentScore = isHome ? f.awayScore! : f.homeScore!;
-        if (teamScore > opponentScore) return 'W';
-        if (teamScore < opponentScore) return 'L';
-        return 'D';
-      });
+        if (isPointBased) {
+          if (f.homeScore === undefined || f.awayScore === undefined) return 'E';
+          const isHome = f.homeTeamId === team.id;
+          const teamScore = isHome ? f.homeScore : f.awayScore;
+          const opponentScore = isHome ? f.awayScore : f.homeScore;
+          if (teamScore > opponentScore) return 'W';
+          if (teamScore < opponentScore) return 'L';
+          return 'D';
+        } else {
+          return f.winner === team.id ? 'W' : 'L';
+        }
+      })
+      .filter(result => result !== 'E'); // Filter out any error states
 
     const matchesRemaining = totalFixtures - playedFixtures.length;
     const nextMatch = teamFixtures.find(f => !f.played);
@@ -97,6 +114,24 @@ export function TournamentStats({ tournament, participantTeamId }: TournamentSta
       pointsConceded
     };
   }, [tournament, participantTeamId]);
+
+  if (!participantTeamId) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[400px] space-y-4 text-center">
+        <div className="p-4 bg-gray-50 dark:bg-gray-800 rounded-full">
+          <UserCircle2 className="w-12 h-12 text-gray-400" />
+        </div>
+        <div>
+          <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100 mb-2`}>
+            Select Your Team
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400 max-w-md">
+            Choose your team from the dropdown menu above to view detailed statistics and track your tournament progress
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   if (!stats) return null;
 
@@ -137,7 +172,7 @@ export function TournamentStats({ tournament, participantTeamId }: TournamentSta
           </div>
           <div className="space-y-1">
             <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-              {value}
+              {typeof value === 'number' ? Math.round(value) : value}
             </div>
             <div className="text-sm text-gray-500 dark:text-gray-400">
               {label}

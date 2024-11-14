@@ -9,7 +9,8 @@ import {
   CheckCircle2,
   XCircle,
   CircleDot,
-  Clock
+  Clock,
+  AlertTriangle
 } from 'lucide-react';
 import { ResultsEntryModal } from './ResultsEntryModal';
 
@@ -19,24 +20,26 @@ interface ResultsMatrixProps {
   onUpdateResult?: (fixture: Fixture, homeScore: number | undefined, awayScore: number | undefined, winnerId?: string) => void;
 }
 
-type MatchResult = 'WIN' | 'LOSS' | 'DRAW' | 'PENDING';
+type MatchResult = 'WIN' | 'LOSS' | 'DRAW' | 'PENDING' | 'ERROR';
 
-function getMatchResult(fixture: Fixture, teamId: string): MatchResult {
+function getMatchResult(fixture: Fixture, teamId: string, isPointBased: boolean): MatchResult {
   if (!fixture.played) return 'PENDING';
   
-  if (fixture.winner) {
+  if (isPointBased) {
+    if (fixture.homeScore === undefined || fixture.awayScore === undefined) return 'ERROR';
+    
+    const isHome = fixture.homeTeamId === teamId;
+    const teamScore = isHome ? fixture.homeScore : fixture.awayScore;
+    const opponentScore = isHome ? fixture.awayScore : fixture.homeScore;
+    
+    if (teamScore > opponentScore) return 'WIN';
+    if (teamScore < opponentScore) return 'LOSS';
+    return 'DRAW';
+  } else {
+    // WIN_LOSS scoring
+    if (!fixture.winner) return 'ERROR';
     return fixture.winner === teamId ? 'WIN' : 'LOSS';
   }
-  
-  if (fixture.homeScore === undefined || fixture.awayScore === undefined) return 'PENDING';
-  
-  const isHome = fixture.homeTeamId === teamId;
-  const teamScore = isHome ? fixture.homeScore : fixture.awayScore;
-  const opponentScore = isHome ? fixture.awayScore : fixture.homeScore;
-  
-  if (teamScore > opponentScore) return 'WIN';
-  if (teamScore < opponentScore) return 'LOSS';
-  return 'DRAW';
 }
 
 function getResultColor(result: MatchResult, isDark: boolean = false) {
@@ -47,6 +50,8 @@ function getResultColor(result: MatchResult, isDark: boolean = false) {
       return isDark ? 'bg-red-900/50 text-red-300' : 'bg-red-100 text-red-700';
     case 'DRAW':
       return isDark ? 'bg-gray-800 text-gray-300' : 'bg-gray-100 text-gray-700';
+    case 'ERROR':
+      return isDark ? 'bg-yellow-900/50 text-yellow-300' : 'bg-yellow-100 text-yellow-700';
     default:
       return isDark ? 'bg-gray-800/50 text-gray-400' : 'bg-gray-50 text-gray-500';
   }
@@ -60,12 +65,14 @@ function getResultIcon(result: MatchResult) {
       return <XCircle className="w-4 h-4" />;
     case 'DRAW':
       return <CircleDot className="w-4 h-4" />;
+    case 'ERROR':
+      return <AlertTriangle className="w-4 h-4" />;
     default:
       return <Clock className="w-4 h-4" />;
   }
 }
 
-function getTeamStreak(fixtures: Tournament['fixtures'], teamId: string): { type: MatchResult; count: number } | null {
+function getTeamStreak(fixtures: Tournament['fixtures'], teamId: string, isPointBased: boolean): { type: MatchResult; count: number } | null {
   const teamFixtures = fixtures
     .filter(f => f.played && (f.homeTeamId === teamId || f.awayTeamId === teamId))
     .sort((a, b) => new Date(b.datePlayed!).getTime() - new Date(a.datePlayed!).getTime());
@@ -76,7 +83,8 @@ function getTeamStreak(fixtures: Tournament['fixtures'], teamId: string): { type
   let streakCount = 0;
 
   for (const fixture of teamFixtures) {
-    const result = getMatchResult(fixture, teamId);
+    const result = getMatchResult(fixture, teamId, isPointBased);
+    if (result === 'ERROR' || result === 'PENDING') continue;
 
     if (streakType === null) {
       streakType = result;
@@ -101,15 +109,34 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
 
   const isPointBased = tournament.pointsConfig.type === 'POINTS';
 
+  // Validate tournament data
+  if (!tournament?.teams?.length || !tournament?.fixtures) {
+    return (
+      <motion.div layout className="flex flex-col items-center justify-center h-[400px] space-y-4 text-center">
+        <div className="p-4 bg-yellow-50 dark:bg-yellow-900/50 rounded-full">
+          <AlertTriangle className="w-12 h-12 text-yellow-500" />
+        </div>
+        <div>
+          <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100 mb-2`}>
+            Invalid Tournament Data
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400 max-w-md">
+            The tournament data appears to be incomplete or malformed. Please ensure all required data is present.
+          </p>
+        </div>
+      </motion.div>
+    );
+  }
+
   const teamStats = useMemo(() => {
     return tournament.teams.map(team => {
-      const streak = getTeamStreak(tournament.fixtures, team.id);
+      const streak = getTeamStreak(tournament.fixtures, team.id, isPointBased);
       return {
         ...team,
         streak
       };
     });
-  }, [tournament]);
+  }, [tournament, isPointBased]);
 
   const getFixture = (homeTeamId: string, awayTeamId: string) => {
     return tournament.fixtures.find(
@@ -142,179 +169,181 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
   };
 
   return (
-    <Tooltip.Provider delayDuration={300}>
-      <div className="flex flex-col h-full">
-        <div className="flex-none space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className={`${typography.h2} text-black/90 dark:text-white/90 mb-2`}>
-                Results Grid
-              </h2>
-              <p className="text-gray-600 dark:text-gray-400">
-                View and update match results
-              </p>
-            </div>
-            
-            {/* Legend */}
-            <div className="flex items-center gap-4 text-sm">
-              <div className="flex items-center gap-2">
-                <div className={`p-1 rounded ${getResultColor('WIN')}`}>
-                  <CheckCircle2 className="w-4 h-4" />
-                </div>
-                <span className="text-gray-600 dark:text-gray-400">Win</span>
+    <motion.div layout className="flex flex-col h-full min-h-[600px]">
+      <div className="flex-none space-y-6 mb-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className={`${typography.h2} text-black/90 dark:text-white/90 mb-2`}>
+              Results Grid
+            </h2>
+            <p className="text-gray-600 dark:text-gray-400">
+              View and update match results
+            </p>
+          </div>
+          
+          {/* Legend */}
+          <div className="flex items-center gap-4 text-sm">
+            <div className="flex items-center gap-2">
+              <div className={`p-1 rounded ${getResultColor('WIN')}`}>
+                <CheckCircle2 className="w-4 h-4" />
               </div>
-              <div className="flex items-center gap-2">
-                <div className={`p-1 rounded ${getResultColor('LOSS')}`}>
-                  <XCircle className="w-4 h-4" />
-                </div>
-                <span className="text-gray-600 dark:text-gray-400">Loss</span>
-              </div>
-              {isPointBased && (
-                <div className="flex items-center gap-2">
-                  <div className={`p-1 rounded ${getResultColor('DRAW')}`}>
-                    <CircleDot className="w-4 h-4" />
-                  </div>
-                  <span className="text-gray-600 dark:text-gray-400">Draw</span>
-                </div>
-              )}
+              <span className="text-gray-600 dark:text-gray-400">Win</span>
             </div>
+            <div className="flex items-center gap-2">
+              <div className={`p-1 rounded ${getResultColor('LOSS')}`}>
+                <XCircle className="w-4 h-4" />
+              </div>
+              <span className="text-gray-600 dark:text-gray-400">Loss</span>
+            </div>
+            {isPointBased && (
+              <div className="flex items-center gap-2">
+                <div className={`p-1 rounded ${getResultColor('DRAW')}`}>
+                  <CircleDot className="w-4 h-4" />
+                </div>
+                <span className="text-gray-600 dark:text-gray-400">Draw</span>
+              </div>
+            )}
           </div>
         </div>
+      </div>
 
-        <div className="relative flex-1 overflow-auto">
-          <div className="absolute inset-0">
-            <table className="w-full border-separate border-spacing-0">
-              <thead>
-                <tr>
-                  <th className="sticky left-0 z-10 bg-white dark:bg-gray-900 px-6 py-4 text-left">
-                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Teams
-                    </div>
-                  </th>
-                  {teamStats.map(team => (
-                    <th 
-                      key={team.id}
-                      className="px-6 py-4"
-                    >
-                      <Tooltip.Root>
-                        <Tooltip.Trigger asChild>
-                          <div className={`
-                            flex flex-col items-center gap-2 
-                            ${team.id === participantTeamId ? 'text-accent' : 'text-gray-900 dark:text-gray-100'}
-                          `}>
-                            <span className="text-xs font-medium whitespace-nowrap">
-                              {team.name}
-                            </span>
-                            {team.streak && (
-                              <div className={`
-                                px-2 py-1 rounded-full text-xs font-medium
-                                ${getResultColor(team.streak.type)}
-                              `}>
-                                {team.streak.count} {team.streak.type.charAt(0)}
-                              </div>
-                            )}
-                          </div>
-                        </Tooltip.Trigger>
-                        <Tooltip.Portal>
-                          <Tooltip.Content 
-                            className="z-50 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg"
-                            sideOffset={5}
-                          >
-                            <div className="text-sm">
-                              {team.streak 
-                                ? `${team.streak.count} match ${team.streak.type.toLowerCase()} streak`
-                                : 'No current streak'
-                              }
+      <Tooltip.Provider delayDuration={300}>
+        <motion.div layout className="flex-1 relative overflow-auto rounded-xl border border-border shadow-sm">
+          <table className="w-full border-separate border-spacing-0">
+            <thead>
+              <tr>
+                <th className="sticky left-0 z-10 bg-white dark:bg-gray-900 px-6 py-4 text-left">
+                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    Teams
+                  </div>
+                </th>
+                {teamStats.map(team => (
+                  <th 
+                    key={team.id}
+                    className="px-6 py-4"
+                  >
+                    <Tooltip.Root>
+                      <Tooltip.Trigger asChild>
+                        <div className={`
+                          flex flex-col items-center gap-2 
+                          ${team.id === participantTeamId ? 'text-accent' : 'text-gray-900 dark:text-gray-100'}
+                        `}>
+                          <span className="text-xs font-medium whitespace-nowrap">
+                            {team.name}
+                          </span>
+                          {team.streak && (
+                            <div className={`
+                              px-2 py-1 rounded-full text-xs font-medium
+                              ${getResultColor(team.streak.type)}
+                            `}>
+                              {team.streak.count} {team.streak.type.charAt(0)}
                             </div>
-                          </Tooltip.Content>
-                        </Tooltip.Portal>
-                      </Tooltip.Root>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {teamStats.map(homeTeam => (
-                  <tr key={homeTeam.id}>
-                    <th 
-                      className={`
-                        sticky left-0 z-10 bg-white dark:bg-gray-900
-                        px-6 py-4 text-sm font-medium whitespace-nowrap
-                        ${homeTeam.id === participantTeamId ? 'text-accent' : 'text-gray-900 dark:text-gray-100'}
-                      `}
-                    >
-                      {homeTeam.name}
-                    </th>
-                    {teamStats.map(awayTeam => {
-                      const fixture = getFixture(homeTeam.id, awayTeam.id);
-                      const cellId = `${homeTeam.id}-${awayTeam.id}`;
-                      
-                      if (homeTeam.id === awayTeam.id) {
-                        return (
-                          <td 
-                            key={cellId}
-                            className="px-4 py-3 text-center bg-gray-50 dark:bg-gray-800/50"
-                          >
-                            -
-                          </td>
-                        );
-                      }
-
-                      const result = fixture ? getMatchResult(fixture, homeTeam.id) : 'PENDING';
-
+                          )}
+                        </div>
+                      </Tooltip.Trigger>
+                      <Tooltip.Portal>
+                        <Tooltip.Content 
+                          className="z-50 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg"
+                          sideOffset={5}
+                        >
+                          <div className="text-sm">
+                            {team.streak 
+                              ? `${team.streak.count} match ${team.streak.type.toLowerCase()} streak`
+                              : 'No current streak'
+                            }
+                          </div>
+                        </Tooltip.Content>
+                      </Tooltip.Portal>
+                    </Tooltip.Root>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {teamStats.map(homeTeam => (
+                <tr key={homeTeam.id}>
+                  <th 
+                    className={`
+                      sticky left-0 z-10 bg-white dark:bg-gray-900
+                      px-6 py-4 text-sm font-medium whitespace-nowrap
+                      ${homeTeam.id === participantTeamId ? 'text-accent' : 'text-gray-900 dark:text-gray-100'}
+                    `}
+                  >
+                    {homeTeam.name}
+                  </th>
+                  {teamStats.map(awayTeam => {
+                    const fixture = getFixture(homeTeam.id, awayTeam.id);
+                    const cellId = `${homeTeam.id}-${awayTeam.id}`;
+                    
+                    if (homeTeam.id === awayTeam.id) {
                       return (
                         <td 
                           key={cellId}
-                          className="relative p-0"
-                          onMouseEnter={() => setHoveredCell(cellId)}
-                          onMouseLeave={() => setHoveredCell(null)}
+                          className="px-4 py-3 text-center bg-gray-50 dark:bg-gray-800/50"
                         >
-                          <Tooltip.Root>
-                            <Tooltip.Trigger asChild>
-                              <motion.div
-                                className={`
-                                  flex items-center justify-center gap-2 p-3
-                                  ${getResultColor(result)}
-                                  ${hoveredCell === cellId && onUpdateResult ? 'ring-2 ring-primary ring-opacity-50' : ''}
-                                  ${onUpdateResult ? 'cursor-pointer' : ''}
-                                  transform-gpu
-                                `}
-                                onClick={() => handleCellClick(homeTeam, awayTeam)}
-                                whileHover={{ scale: onUpdateResult ? 1.02 : 1 }}
-                                transition={{ duration: 0.2 }}
-                              >
-                                {fixture?.played ? (
-                                  <>
-                                    {isPointBased ? (
-                                      <span className="font-medium">
-                                        {fixture.homeScore} - {fixture.awayScore}
-                                      </span>
-                                    ) : (
-                                      <span className="font-medium">
-                                        {result === 'WIN' ? 'W' : 'L'}
-                                      </span>
-                                    )}
-                                    {getResultIcon(result)}
-                                  </>
-                                ) : (
-                                  <span className="text-gray-400 dark:text-gray-500">vs</span>
-                                )}
-                              </motion.div>
-                            </Tooltip.Trigger>
-                            <Tooltip.Portal>
-                              <Tooltip.Content 
-                                className="z-50 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg"
-                                sideOffset={5}
-                              >
-                                {fixture?.played ? (
-                                  <div className="space-y-1">
-                                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
-                                      {homeTeam.name} vs {awayTeam.name}
-                                    </div>
-                                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                                      {new Date(fixture.datePlayed!).toLocaleDateString()}
-                                    </div>
-                                    {isPointBased ? (
+                          -
+                        </td>
+                      );
+                    }
+
+                    const result = fixture ? getMatchResult(fixture, homeTeam.id, isPointBased) : 'PENDING';
+
+                    return (
+                      <td 
+                        key={cellId}
+                        className="relative p-0"
+                        onMouseEnter={() => setHoveredCell(cellId)}
+                        onMouseLeave={() => setHoveredCell(null)}
+                      >
+                        <Tooltip.Root>
+                          <Tooltip.Trigger asChild>
+                            <motion.div
+                              className={`
+                                flex items-center justify-center gap-2 p-3
+                                ${getResultColor(result)}
+                                ${hoveredCell === cellId && onUpdateResult ? 'ring-2 ring-primary ring-opacity-50' : ''}
+                                ${onUpdateResult ? 'cursor-pointer' : ''}
+                                transform-gpu
+                              `}
+                              onClick={() => handleCellClick(homeTeam, awayTeam)}
+                              whileHover={{ scale: onUpdateResult ? 1.02 : 1 }}
+                              transition={{ duration: 0.2 }}
+                            >
+                              {fixture?.played ? (
+                                <>
+                                  {result !== 'ERROR' && isPointBased ? (
+                                    <span className="font-medium">
+                                      {fixture.homeScore} - {fixture.awayScore}
+                                    </span>
+                                  ) : result !== 'ERROR' ? (
+                                    <span className="font-medium">
+                                      {result === 'WIN' ? 'W' : 'L'}
+                                    </span>
+                                  ) : (
+                                    <span className="font-medium">ERR</span>
+                                  )}
+                                  {getResultIcon(result)}
+                                </>
+                              ) : (
+                                <span className="text-gray-400 dark:text-gray-500">vs</span>
+                              )}
+                            </motion.div>
+                          </Tooltip.Trigger>
+                          <Tooltip.Portal>
+                            <Tooltip.Content 
+                              className="z-50 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg"
+                              sideOffset={5}
+                            >
+                              {fixture?.played ? (
+                                <div className="space-y-1">
+                                  <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                    {homeTeam.name} vs {awayTeam.name}
+                                  </div>
+                                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                                    {new Date(fixture.datePlayed!).toLocaleDateString()}
+                                  </div>
+                                  {result !== 'ERROR' ? (
+                                    isPointBased ? (
                                       <div className="text-sm font-medium">
                                         Final Score: {fixture.homeScore} - {fixture.awayScore}
                                       </div>
@@ -322,38 +351,42 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
                                       <div className="text-sm font-medium">
                                         Winner: {fixture.winner === homeTeam.id ? homeTeam.name : awayTeam.name}
                                       </div>
-                                    )}
-                                  </div>
-                                ) : (
-                                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                                    {onUpdateResult ? 'Click to enter result' : 'Match not played yet'}
-                                  </div>
-                                )}
-                              </Tooltip.Content>
-                            </Tooltip.Portal>
-                          </Tooltip.Root>
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                                    )
+                                  ) : (
+                                    <div className="text-sm text-yellow-500">
+                                      Invalid match data
+                                    </div>
+                                  )}
+                                </div>
+                              ) : (
+                                <div className="text-sm text-gray-500 dark:text-gray-400">
+                                  {onUpdateResult ? 'Click to enter result' : 'Match not played yet'}
+                                </div>
+                              )}
+                            </Tooltip.Content>
+                          </Tooltip.Portal>
+                        </Tooltip.Root>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </motion.div>
+      </Tooltip.Provider>
 
-        {selectedFixture && (
-          <ResultsEntryModal
-            isOpen={true}
-            onClose={() => setSelectedFixture(null)}
-            onSave={handleSaveResult}
-            homeTeam={selectedFixture.homeTeam}
-            awayTeam={selectedFixture.awayTeam}
-            fixture={selectedFixture.fixture}
-            tournament={tournament} 
-          />
-        )}
-      </div>
-    </Tooltip.Provider>
+      {selectedFixture && (
+        <ResultsEntryModal
+          isOpen={true}
+          onClose={() => setSelectedFixture(null)}
+          onSave={handleSaveResult}
+          homeTeam={selectedFixture.homeTeam}
+          awayTeam={selectedFixture.awayTeam}
+          fixture={selectedFixture.fixture}
+          tournament={tournament}
+        />
+      )}
+    </motion.div>
   );
 }

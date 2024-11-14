@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { typography } from '../../lib/design-system';
-import { Tournament, ScoringType } from '../../types/tournament';
+import { Tournament, ScoringType, Fixture } from '../../types/tournament';
 import { useState, useRef } from 'react';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { 
@@ -30,7 +30,7 @@ import {
 
 interface TournamentSettingsProps {
   tournament: Tournament;
-  onSave: (settings: Partial<Tournament>) => void;
+  onSave: (settings: Tournament) => void;
   onClose: () => void;
 }
 
@@ -45,10 +45,68 @@ export function TournamentSettings({ tournament, onSave, onClose }: TournamentSe
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleSave = () => {
-    onSave({ 
-      pointsConfig, 
-      phase 
-    });
+    // Migrate fixture data if scoring type has changed
+    let updatedFixtures = tournament.fixtures;
+    if (pointsConfig.type !== tournament.pointsConfig.type) {
+      updatedFixtures = tournament.fixtures.map(fixture => {
+        if (!fixture.played) return fixture;
+
+        if (pointsConfig.type === 'POINTS') {
+          // Convert from WIN_LOSS to POINTS
+          const newFixture: Fixture = {
+            ...fixture,
+            homeScore: fixture.winner === fixture.homeTeamId ? 1 : 0,
+            awayScore: fixture.winner === fixture.awayTeamId ? 1 : 0,
+            winner: undefined, // Remove winner property for POINTS type
+            datePlayed: fixture.datePlayed,
+            id: fixture.id,
+            homeTeamId: fixture.homeTeamId,
+            awayTeamId: fixture.awayTeamId,
+            played: fixture.played,
+            phase: fixture.phase
+          };
+          return newFixture;
+        } else {
+          // Convert from POINTS to WIN_LOSS
+          const newFixture: Fixture = {
+            ...fixture,
+            winner: fixture.homeScore !== undefined && fixture.awayScore !== undefined
+              ? (fixture.homeScore > fixture.awayScore 
+                ? fixture.homeTeamId 
+                : fixture.awayTeamId)
+              : undefined,
+            homeScore: undefined, // Remove scores for WIN_LOSS type
+            awayScore: undefined,
+            datePlayed: fixture.datePlayed,
+            id: fixture.id,
+            homeTeamId: fixture.homeTeamId,
+            awayTeamId: fixture.awayTeamId,
+            played: fixture.played,
+            phase: fixture.phase
+          };
+          return newFixture;
+        }
+      });
+    }
+
+    // Create updated tournament object with all required properties
+    const updatedTournament: Tournament = {
+      ...tournament,
+      pointsConfig,
+      phase,
+      fixtures: updatedFixtures,
+      dateModified: new Date().toISOString(),
+      teams: tournament.teams.map(team => ({
+        ...team,
+        // Reset stats as they'll be recalculated by the parent
+        played: 0,
+        won: 0,
+        lost: 0,
+        points: 0
+      }))
+    };
+
+    onSave(updatedTournament);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
     setHasChanges(false);
@@ -137,54 +195,6 @@ export function TournamentSettings({ tournament, onSave, onClose }: TournamentSe
     // Clear the input
     event.target.value = '';
   };
-
-  const SettingSection = ({ 
-    title, 
-    icon: Icon, 
-    children, 
-    tooltip,
-    className = ''
-  }: { 
-    title: string; 
-    icon: any; 
-    children: React.ReactNode;
-    tooltip?: string;
-    className?: string;
-  }) => (
-    <div className={`space-y-4 ${className}`}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-accent/10">
-            <Icon className="w-5 h-5 text-accent" />
-          </div>
-          <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100`}>
-            {title}
-          </h3>
-        </div>
-        {tooltip && (
-          <Tooltip.Provider>
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <button className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
-                  <Info className="w-4 h-4" />
-                </button>
-              </Tooltip.Trigger>
-              <Tooltip.Portal>
-                <Tooltip.Content 
-                  className="z-[100] bg-white dark:bg-gray-800 px-4 py-3 rounded-lg shadow-lg text-sm max-w-xs border border-gray-200 dark:border-gray-700"
-                  sideOffset={5}
-                >
-                  {tooltip}
-                  <Tooltip.Arrow className="fill-white dark:fill-gray-800" />
-                </Tooltip.Content>
-              </Tooltip.Portal>
-            </Tooltip.Root>
-          </Tooltip.Provider>
-        )}
-      </div>
-      {children}
-    </div>
-  );
 
   return (
     <div className="py-6">
@@ -565,6 +575,56 @@ export function TournamentSettings({ tournament, onSave, onClose }: TournamentSe
           </motion.div>
         )}
       </AnimatePresence>
+    </div>
+  );
+}
+
+function SettingSection({ 
+  title, 
+  icon: Icon, 
+  children, 
+  tooltip,
+  className = ''
+}: { 
+  title: string; 
+  icon: any; 
+  children: React.ReactNode;
+  tooltip?: string;
+  className?: string;
+}) {
+  return (
+    <div className={`space-y-4 ${className}`}>
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="p-2 rounded-lg bg-accent/10">
+            <Icon className="w-5 h-5 text-accent" />
+          </div>
+          <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100`}>
+            {title}
+          </h3>
+        </div>
+        {tooltip && (
+          <Tooltip.Provider>
+            <Tooltip.Root>
+              <Tooltip.Trigger asChild>
+                <button className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
+                  <Info className="w-4 h-4" />
+                </button>
+              </Tooltip.Trigger>
+              <Tooltip.Portal>
+                <Tooltip.Content 
+                  className="z-[100] bg-white dark:bg-gray-800 px-4 py-3 rounded-lg shadow-lg text-sm max-w-xs border border-gray-200 dark:border-gray-700"
+                  sideOffset={5}
+                >
+                  {tooltip}
+                  <Tooltip.Arrow className="fill-white dark:fill-gray-800" />
+                </Tooltip.Content>
+              </Tooltip.Portal>
+            </Tooltip.Root>
+          </Tooltip.Provider>
+        )}
+      </div>
+      {children}
     </div>
   );
 }

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Tournament, Fixture } from '../types/tournament';
+import { Tournament, Fixture, Team } from '../types/tournament';
 import { TournamentSettings as Settings, defaultTournamentSettings } from '../types/settings';
 import { ResultsMatrix } from './tournament/ResultsMatrix';
 import { TournamentStats } from './TournamentStats';
@@ -23,6 +23,20 @@ interface TournamentViewProps {
   onBack: () => void;
 }
 
+// Type guard to ensure all required tournament properties are present
+function isValidTournament(obj: Partial<Tournament>): obj is Tournament {
+  return !!(
+    obj.id &&
+    obj.name &&
+    obj.phase &&
+    Array.isArray(obj.teams) &&
+    Array.isArray(obj.fixtures) &&
+    obj.pointsConfig &&
+    obj.dateCreated &&
+    obj.dateModified
+  );
+}
+
 export function TournamentView({ tournament, onEdit, onBack }: TournamentViewProps): JSX.Element {
   const router = useRouter();
   const pathname = usePathname();
@@ -30,7 +44,72 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
   const { getAnimationConfig, updateSettings: updateGlobalSettings, settings: globalSettings } = useGlobalSettings();
   const { showToast } = useToast();
 
-  const [currentTournament, setCurrentTournament] = useState(tournament);
+  const calculateTeamStats = useCallback((
+    teams: Team[],
+    fixtures: Fixture[],
+    pointsConfig: Tournament['pointsConfig']
+  ): Team[] => {
+    return teams.map(team => {
+      const teamFixtures = fixtures.filter(f => 
+        f.played && (f.homeTeamId === team.id || f.awayTeamId === team.id)
+      );
+
+      let won = 0;
+      let lost = 0;
+      let points = 0;
+
+      teamFixtures.forEach(fixture => {
+        const isHome = fixture.homeTeamId === team.id;
+        
+        if (pointsConfig.type === 'POINTS') {
+          const teamScore = isHome ? fixture.homeScore! : fixture.awayScore!;
+          const opponentScore = isHome ? fixture.awayScore! : fixture.homeScore!;
+
+          if (teamScore > opponentScore) {
+            won++;
+            points += pointsConfig.win;
+          } else if (teamScore < opponentScore) {
+            lost++;
+            points += pointsConfig.loss;
+          } else {
+            points += pointsConfig.draw || 0;
+          }
+        } else {
+          // WIN_LOSS scoring
+          if (fixture.winner === team.id) {
+            won++;
+            points += pointsConfig.win;
+          } else {
+            lost++;
+            points += pointsConfig.loss;
+          }
+        }
+      });
+
+      return {
+        ...team,
+        played: teamFixtures.length,
+        won,
+        lost,
+        points
+      };
+    });
+  }, []);
+
+  const [currentTournament, setCurrentTournament] = useState<Tournament>(() => {
+    // Initialize tournament with calculated stats
+    const updatedTeams = calculateTeamStats(
+      tournament.teams,
+      tournament.fixtures,
+      tournament.pointsConfig
+    );
+
+    return {
+      ...tournament,
+      teams: updatedTeams
+    };
+  });
+
   const [showSettings, setShowSettings] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
   const [participantTeamId, setParticipantTeamId] = useState<string>('');
@@ -146,11 +225,21 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
         f.homeTeamId === fixture.homeTeamId && f.awayTeamId === fixture.awayTeamId
       );
 
-      const updatedTournament = {
+      const updatedFixtures = existingFixtureIndex >= 0
+        ? currentTournament.fixtures.map((f, i) => i === existingFixtureIndex ? updatedFixture : f)
+        : [...currentTournament.fixtures, updatedFixture];
+
+      // Calculate updated team stats
+      const updatedTeams = calculateTeamStats(
+        currentTournament.teams,
+        updatedFixtures,
+        currentTournament.pointsConfig
+      );
+
+      const updatedTournament: Tournament = {
         ...currentTournament,
-        fixtures: existingFixtureIndex >= 0
-          ? currentTournament.fixtures.map((f, i) => i === existingFixtureIndex ? updatedFixture : f)
-          : [...currentTournament.fixtures, updatedFixture],
+        fixtures: updatedFixtures,
+        teams: updatedTeams,
         dateModified: new Date().toISOString()
       };
 
@@ -161,7 +250,7 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
       console.error('Failed to update fixture:', error);
       showToast('Failed to update match result', 'error');
     }
-  }, [currentTournament, showToast]);
+  }, [currentTournament, showToast, calculateTeamStats]);
 
   const handleViewModeChange = useCallback((mode: ViewMode) => {
     const current = new URLSearchParams(Array.from(searchParams.entries()));
@@ -219,8 +308,23 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
                   tournament={currentTournament}
                   onSave={(updatedTournament) => {
                     try {
-                      setCurrentTournament(prev => ({ ...prev, ...updatedTournament }));
-                      storage.saveTournament({ ...currentTournament, ...updatedTournament });
+                      if (!isValidTournament(updatedTournament)) {
+                        throw new Error('Invalid tournament data');
+                      }
+
+                      const updatedTeams = calculateTeamStats(
+                        updatedTournament.teams,
+                        updatedTournament.fixtures,
+                        updatedTournament.pointsConfig
+                      );
+
+                      const finalTournament: Tournament = {
+                        ...updatedTournament,
+                        teams: updatedTeams
+                      };
+
+                      setCurrentTournament(finalTournament);
+                      storage.saveTournament(finalTournament);
                       showToast('Tournament settings saved', 'success');
                     } catch (error) {
                       console.error('Failed to save tournament settings:', error);
