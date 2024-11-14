@@ -23,6 +23,9 @@ export class RTCManager {
   private connectionTimeout: NodeJS.Timeout | null = null;
   private signallingCheckInterval: NodeJS.Timeout | null = null;
   private isClosing = false;
+  private pendingCandidates: RTCIceCandidate[] = [];
+  private hasRemoteDescription = false;
+  private isNegotiating = false;
 
   constructor(tournamentId: string, peerId: string, isHost: boolean) {
     this.tournamentId = tournamentId;
@@ -70,6 +73,11 @@ export class RTCManager {
 
     this.peerConnection.onsignalingstatechange = () => {
       console.log('Signaling state:', this.peerConnection?.signalingState);
+      
+      if (this.peerConnection?.signalingState === 'stable') {
+        this.isNegotiating = false;
+      }
+
       this.stateCallback?.(
         this.getConnectionState(),
         undefined,
@@ -78,21 +86,22 @@ export class RTCManager {
     };
 
     this.peerConnection.onnegotiationneeded = async () => {
-      if (this.isHost) {
-        try {
-          const offer = await this.peerConnection!.createOffer();
-          await this.peerConnection!.setLocalDescription(offer);
+      try {
+        if (this.isHost && !this.isNegotiating && this.peerConnection?.signalingState === 'stable') {
+          this.isNegotiating = true;
+          await this.peerConnection.setLocalDescription();
           
           const message: SignalingMessage = {
-            type: 'renegotiate',
+            type: 'offer',
             senderId: this.peerId,
             timestamp: new Date().toISOString(),
-            data: offer
+            data: this.peerConnection.localDescription!.toJSON()
           };
           syncStorage.addSignalingMessage(this.tournamentId, message);
-        } catch (error) {
-          console.error('Renegotiation failed:', error);
         }
+      } catch (error) {
+        console.error('Renegotiation failed:', error);
+        this.isNegotiating = false;
       }
     };
 
@@ -171,6 +180,19 @@ export class RTCManager {
     await this.cleanup();
   }
 
+  private async addPendingCandidates() {
+    if (!this.peerConnection || !this.hasRemoteDescription) return;
+
+    while (this.pendingCandidates.length > 0) {
+      const candidate = this.pendingCandidates.shift()!;
+      try {
+        await this.peerConnection.addIceCandidate(candidate);
+      } catch (error) {
+        console.error('Failed to add ICE candidate:', error);
+      }
+    }
+  }
+
   private startSignallingCheck() {
     this.signallingCheckInterval = setInterval(() => {
       const messages = syncStorage.getSignalingMessages(this.tournamentId, this.peerId);
@@ -191,9 +213,12 @@ export class RTCManager {
 
     switch (message.type) {
       case 'offer':
-      case 'renegotiate':
-        if (!this.isHost) {
+        if (!this.isHost && !this.isNegotiating) {
+          this.isNegotiating = true;
           await this.peerConnection.setRemoteDescription(new RTCSessionDescription(message.data as RTCSessionDescriptionInit));
+          this.hasRemoteDescription = true;
+          await this.addPendingCandidates();
+          
           const answer = await this.peerConnection.createAnswer();
           await this.peerConnection.setLocalDescription(answer);
           
@@ -205,20 +230,29 @@ export class RTCManager {
             data: answer
           };
           syncStorage.addSignalingMessage(this.tournamentId, answerMessage);
+          this.isNegotiating = false;
         }
         break;
 
       case 'answer':
-        if (this.isHost) {
+        if (this.isHost && this.isNegotiating) {
           await this.peerConnection.setRemoteDescription(new RTCSessionDescription(message.data as RTCSessionDescriptionInit));
+          this.hasRemoteDescription = true;
+          await this.addPendingCandidates();
+          this.isNegotiating = false;
         }
         break;
 
       case 'ice-candidate':
-        try {
-          await this.peerConnection.addIceCandidate(new RTCIceCandidate(message.data as RTCIceCandidateInit));
-        } catch (error) {
-          console.error('Failed to add ICE candidate:', error);
+        const candidate = new RTCIceCandidate(message.data as RTCIceCandidateInit);
+        if (this.hasRemoteDescription) {
+          try {
+            await this.peerConnection.addIceCandidate(candidate);
+          } catch (error) {
+            console.error('Failed to add ICE candidate:', error);
+          }
+        } else {
+          this.pendingCandidates.push(candidate);
         }
         break;
     }
@@ -227,20 +261,24 @@ export class RTCManager {
   async connect() {
     try {
       this.isClosing = false;
+      this.hasRemoteDescription = false;
+      this.isNegotiating = false;
+      this.pendingCandidates = [];
+      
       this.setupPeerConnection();
       this.startSignallingCheck();
       this.startConnectionTimeout();
       this.stateCallback?.('connecting');
 
       if (this.isHost && this.peerConnection) {
-        const offer = await this.peerConnection.createOffer();
-        await this.peerConnection.setLocalDescription(offer);
+        this.isNegotiating = true;
+        await this.peerConnection.setLocalDescription();
         
         const offerMessage: SignalingMessage = {
           type: 'offer',
           senderId: this.peerId,
           timestamp: new Date().toISOString(),
-          data: offer
+          data: this.peerConnection.localDescription!.toJSON()
         };
         syncStorage.addSignalingMessage(this.tournamentId, offerMessage);
       }
@@ -269,6 +307,10 @@ export class RTCManager {
       this.peerConnection.close();
       this.peerConnection = null;
     }
+
+    this.hasRemoteDescription = false;
+    this.isNegotiating = false;
+    this.pendingCandidates = [];
 
     if (this.isHost) {
       syncStorage.deleteSession(this.tournamentId);

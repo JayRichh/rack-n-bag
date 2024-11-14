@@ -3,10 +3,10 @@
 import { motion } from 'framer-motion';
 import { Tournament } from '../../types/tournament';
 import { ParticipantSelector } from '../ParticipantSelector';
-import { Settings, ArrowLeft, Edit, Grid, BarChart2, Table2, Sliders, Eye, Cog, Globe, Wifi, Crown, Loader2, WifiOff } from 'lucide-react';
+import { Settings, ArrowLeft, Edit, Grid, BarChart2, Table2, Sliders, Eye, Cog, Globe, Wifi, Crown, Loader2, WifiOff, X, AlertCircle } from 'lucide-react';
 import { typography } from '../../lib/design-system';
 import * as Tooltip from '@radix-ui/react-tooltip';
-import { useTournamentSync } from '../../hooks/useTournamentSync';
+import { useSyncContext } from '../SyncContext';
 
 export type ViewMode = 'STATS' | 'GRID' | 'TABLE';
 
@@ -41,9 +41,10 @@ export function TournamentHeader({
   selectedPlayerId,
   onParticipantSelect
 }: TournamentHeaderProps) {
-  const { syncState } = useTournamentSync(tournament.id);
+  const { syncState, cleanup } = useSyncContext();
 
   const getSyncIcon = () => {
+    if (syncState.error) return AlertCircle;
     switch (syncState.status) {
       case 'connected':
         return Wifi;
@@ -56,7 +57,22 @@ export function TournamentHeader({
     }
   };
 
+  const getSyncColor = () => {
+    if (syncState.error) return 'red';
+    switch (syncState.status) {
+      case 'connected':
+        return 'emerald';
+      case 'host':
+        return 'blue';
+      case 'connecting':
+        return 'yellow';
+      default:
+        return 'gray';
+    }
+  };
+
   const getSyncLabel = () => {
+    if (syncState.error) return 'Connection Error';
     switch (syncState.status) {
       case 'connected':
         return `Synced (${syncState.connectedPeers} connected)`;
@@ -70,6 +86,7 @@ export function TournamentHeader({
   };
 
   const getSyncTooltip = () => {
+    if (syncState.error) return syncState.error;
     switch (syncState.status) {
       case 'connected':
         return `Connected to host with ${syncState.connectedPeers} other participant${syncState.connectedPeers !== 1 ? 's' : ''}`;
@@ -119,7 +136,8 @@ export function TournamentHeader({
     onClick, 
     isActive,
     tooltip,
-    isLoading
+    isLoading,
+    color = 'gray'
   }: { 
     icon: any;
     label: string;
@@ -127,6 +145,7 @@ export function TournamentHeader({
     isActive?: boolean;
     tooltip: string;
     isLoading?: boolean;
+    color?: string;
   }) => (
     <Tooltip.Root>
       <Tooltip.Trigger asChild>
@@ -135,8 +154,8 @@ export function TournamentHeader({
           className={`
             flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium
             ${isActive 
-              ? 'bg-accent text-white' 
-              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+              ? `bg-${color}-500 text-white dark:bg-${color}-600` 
+              : `text-${color}-600 dark:text-${color}-400 hover:bg-${color}-50 dark:hover:bg-${color}-900/20`
             }
             transition-colors
             ${isLoading ? 'cursor-wait' : ''}
@@ -146,6 +165,15 @@ export function TournamentHeader({
         >
           <Icon className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           <span>{label}</span>
+          {(syncState.status === 'connected' || syncState.status === 'host') && (
+            <X 
+              className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" 
+              onClick={(e) => {
+                e.stopPropagation();
+                cleanup();
+              }}
+            />
+          )}
         </motion.button>
       </Tooltip.Trigger>
       <Tooltip.Portal>
@@ -154,6 +182,9 @@ export function TournamentHeader({
           sideOffset={5}
         >
           {tooltip}
+          {(syncState.status === 'connected' || syncState.status === 'host') && (
+            <div className="mt-1 text-xs text-gray-500">Click × to disconnect</div>
+          )}
         </Tooltip.Content>
       </Tooltip.Portal>
     </Tooltip.Root>
@@ -198,6 +229,7 @@ export function TournamentHeader({
             isActive={showSync || syncState.status !== 'disconnected'}
             isLoading={syncState.status === 'connecting'}
             tooltip={getSyncTooltip()}
+            color={getSyncColor()}
           />
 
           <ActionButton

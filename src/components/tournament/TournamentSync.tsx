@@ -233,15 +233,13 @@ export function TournamentSync() {
                       <span>Last sync: {new Date(syncState.lastSync).toLocaleTimeString()}</span>
                     </div>
                   )}
-                  {isConnected && (
-                    <button
-                      onClick={cleanup}
-                      className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
-                      title="Disconnect"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
+                  <button
+                    onClick={cleanup}
+                    className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+                    title="Disconnect"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </>
               ) : (
                 <>

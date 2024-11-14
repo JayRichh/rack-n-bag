@@ -6,9 +6,10 @@ Create and manage tournaments with ease. Track scores, standings, and real-time 
 ## Key Features
 - 💾 Local storage for offline functionality
 - 📤 Import/Export tournament data
+- 🔄 Real-time sync between participants
 
 <img src="https://github.com/user-attachments/assets/213d8768-68dc-4385-b521-2dfbf943b26c" width="800" alt="Features Overview"/>
-
+E
 - 📈 Match progress tracking
 - 🌙 Dark mode support
 - 📱 Responsive design for all devices
@@ -18,6 +19,7 @@ Create and manage tournaments with ease. Track scores, standings, and real-time 
 - 🏆 Tournament creation and management
 - 📊 Real-time standings and results tracking
 - 🔄 Round-robin and single-round formats
+- 🌐 Peer-to-peer tournament sync
 
 <img src="https://github.com/user-attachments/assets/58e875b1-3c9c-45da-9516-2dd73bc8005b" width="800" alt="Development Overview"/>
 
@@ -42,8 +44,9 @@ Built with:
 - TypeScript
 - Tailwind CSS
 - Framer Motion
+- WebRTC for real-time sync
 - Local Storage for data persistence
 
 ## Development
 
-The application uses a modern tech stack with a focus on performance and user experience. All tournament data is stored locally in the browser, allowing for offline functionality while maintaining data privacy.
+The application uses a modern tech stack with a focus on performance and user experience. Tournament data is stored locally for offline functionality, with optional peer-to-peer sync for real-time collaboration. The WebRTC-based sync system enables instant updates between participants without requiring a central server.

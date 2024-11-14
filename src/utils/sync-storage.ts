@@ -1,8 +1,6 @@
-import { SyncSession, SignalingMessage } from '../types/sync';
+import { SyncSession, SignalingMessage, SESSION_CLEANUP_INTERVAL, SESSION_EXPIRY } from '../types/sync';
 
 const SYNC_SESSION_KEY = 'tournament_sync_sessions';
-const SESSION_CLEANUP_INTERVAL = 60000; // 1 minute
-const SESSION_EXPIRY = 5 * 60 * 1000; // 5 minutes
 
 class SyncStorage {
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -19,6 +17,12 @@ class SyncStorage {
       let hasChanges = false;
 
       Object.entries(sessions).forEach(([id, session]) => {
+        // Clean up old messages first
+        session.messages = session.messages.filter(msg => 
+          Date.now() - new Date(msg.timestamp).getTime() < 30000
+        );
+
+        // Then check if session is expired
         if (Date.now() - new Date(session.lastActive).getTime() > SESSION_EXPIRY) {
           delete sessions[id];
           hasChanges = true;
@@ -58,6 +62,12 @@ class SyncStorage {
 
   createSession(session: SyncSession): void {
     const sessions = this.getSessions();
+    
+    // Clean up any existing session for this tournament
+    if (sessions[session.tournamentId]) {
+      delete sessions[session.tournamentId];
+    }
+    
     sessions[session.tournamentId] = {
       ...session,
       messages: [],
@@ -83,8 +93,15 @@ class SyncStorage {
     const session = sessions[tournamentId];
     
     if (session) {
-      // Keep only recent messages (last 30 seconds)
-      const recentMessages = session.messages.filter(msg => 
+      // Remove any old messages of the same type from the same sender
+      const filteredMessages = session.messages.filter(msg => 
+        !(msg.type === message.type && 
+          msg.senderId === message.senderId &&
+          msg.receiverId === message.receiverId)
+      );
+      
+      // Keep only recent messages
+      const recentMessages = filteredMessages.filter(msg => 
         Date.now() - new Date(msg.timestamp).getTime() < 30000
       );
       
@@ -102,7 +119,7 @@ class SyncStorage {
     const session = this.getSession(tournamentId);
     if (!session) return [];
 
-    // Get messages intended for this receiver
+    // Get messages intended for this receiver or broadcast messages
     return session.messages.filter(msg => 
       !msg.receiverId || msg.receiverId === receiverId
     );
