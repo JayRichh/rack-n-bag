@@ -2,10 +2,10 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { typography, containers } from '../../lib/design-system';
-import { Tournament, Team, ScoringType } from '../../types/tournament';
+import { Tournament, Team, ScoringType, BracketPosition } from '../../types/tournament';
 import { useMemo, useState, useEffect } from 'react';
 import * as Tooltip from '@radix-ui/react-tooltip';
-import { Info, TrendingDown, TrendingUp, Minus, ChevronUp, ChevronDown } from 'lucide-react';
+import { Info, TrendingDown, TrendingUp, Minus, ChevronUp, ChevronDown, Trophy, Shield } from 'lucide-react';
 
 interface PlayerStats extends Team {
   gamesPlayed: number;
@@ -16,8 +16,11 @@ interface PlayerStats extends Team {
   pointsConceded: number;
   pointsDifference: number;
   tournamentPoints: number;
+  buchholzScore?: number;
   form: ('W' | 'L' | 'D')[];
   previousPosition?: number;
+  bracket?: BracketPosition;
+  eliminated?: boolean;
 }
 
 interface TournamentTableProps {
@@ -35,10 +38,11 @@ const columnDefinitions = {
   pf: { label: 'PF', tooltip: 'Points For' },
   pa: { label: 'PA', tooltip: 'Points Against' },
   pd: { label: 'PD', tooltip: 'Points Difference' },
+  buchholz: { label: 'BH', tooltip: 'Buchholz Score (Sum of opponents points)' },
   pts: { label: 'PTS', tooltip: 'Tournament Points' }
 };
 
-type SortField = 'tournamentPoints' | 'pointsDifference' | 'pointsScored' | 'wins' | 'draws' | 'losses';
+type SortField = 'tournamentPoints' | 'pointsDifference' | 'pointsScored' | 'wins' | 'draws' | 'losses' | 'buchholzScore';
 type SortDirection = 'asc' | 'desc';
 
 function FormBadge({ result }: { result: 'W' | 'L' | 'D' }) {
@@ -67,12 +71,49 @@ function PositionIndicator({ current, previous }: { current: number; previous?: 
   return <TrendingDown className="w-4 h-4 text-red-500" />;
 }
 
+function BracketIndicator({ bracket, eliminated }: { bracket?: BracketPosition; eliminated?: boolean }) {
+  if (eliminated) {
+    return <span className="text-red-500 dark:text-red-400">(Eliminated)</span>;
+  }
+
+  if (bracket === 'WINNERS') {
+    return (
+      <div className="flex items-center gap-1 text-amber-500">
+        <Trophy className="w-4 h-4" />
+        <span>Winners</span>
+      </div>
+    );
+  }
+
+  if (bracket === 'CONSOLATION') {
+    return (
+      <div className="flex items-center gap-1 text-blue-500">
+        <Shield className="w-4 h-4" />
+        <span>Consolation</span>
+      </div>
+    );
+  }
+
+  return null;
+}
+const compareValues = (a: number | undefined, b: number | undefined, modifier: number): number => {
+  // If both values are undefined, consider them equal
+  if (a === undefined && b === undefined) return 0;
+  // If only a is undefined, consider it less than b
+  if (a === undefined) return 1 * modifier;
+  // If only b is undefined, consider it less than a
+  if (b === undefined) return -1 * modifier;
+  // If both values are defined, compare them normally
+  return (a - b) * modifier;
+};
 export function TournamentTable({ tournament, selectedPlayerId }: TournamentTableProps) {
   const [sortField, setSortField] = useState<SortField>('tournamentPoints');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
 
   const isPointBased = tournament.pointsConfig.type === 'POINTS';
+  const isSwissSystem = tournament.phase === 'SWISS_SYSTEM';
+  const isElimination = tournament.phase === 'SINGLE_ELIMINATION';
 
   const playerStats = useMemo<PlayerStats[]>(() => {
     // Get previous positions from localStorage
@@ -146,28 +187,52 @@ export function TournamentTable({ tournament, selectedPlayerId }: TournamentTabl
         ...player,
         ...stats,
         pointsDifference: stats.pointsScored - stats.pointsConceded,
-        previousPosition: storedPositions[player.id]
+        previousPosition: storedPositions[player.id],
+        buchholzScore: player.buchholzScore,
+        bracket: player.bracket,
+        eliminated: player.status === 'ELIMINATED'
       };
     }).sort((a, b) => {
-      const getValue = (player: PlayerStats) => player[sortField];
-      const modifier = sortDirection === 'desc' ? -1 : 1;
+      // For elimination tournaments, sort by bracket first
+      if (isElimination) {
+        if (a.bracket !== b.bracket) {
+          if (a.bracket === 'WINNERS') return -1;
+          if (b.bracket === 'WINNERS') return 1;
+        }
+        if (a.eliminated !== b.eliminated) {
+          return a.eliminated ? 1 : -1;
+        }
+      }
+
+      const getValue = (player: PlayerStats) => {
+        if (sortField === 'buchholzScore') {
+          return player.buchholzScore || 0; // Default to 0 if undefined
+        }
+        return player[sortField];
+      };
       
-      const diff = (getValue(a) - getValue(b)) * modifier;
+      const modifier = sortDirection === 'desc' ? -1 : 1;
+      const diff = compareValues(getValue(a), getValue(b), modifier);
+      
       if (diff !== 0) return diff;
       
       // Secondary sorting
+      if (isSwissSystem && sortField !== 'buchholzScore') {
+        const buchholzDiff = compareValues(a.buchholzScore, b.buchholzScore, modifier);
+        if (buchholzDiff !== 0) return buchholzDiff;
+      }
+      
       if (isPointBased) {
         if (sortField !== 'pointsDifference') {
-          const pdDiff = (b.pointsDifference - a.pointsDifference) * modifier;
+          const pdDiff = compareValues(b.pointsDifference, a.pointsDifference, modifier);
           if (pdDiff !== 0) return pdDiff;
         }
         
         if (sortField !== 'pointsScored') {
-          return (b.pointsScored - a.pointsScored) * modifier;
+          return compareValues(b.pointsScored, a.pointsScored, modifier);
         }
       } else {
-        // For WIN_LOSS, secondary sort by wins
-        return (b.wins - a.wins) * modifier;
+        return compareValues(b.wins, a.wins, modifier);
       }
       
       return 0;
@@ -183,7 +248,7 @@ export function TournamentTable({ tournament, selectedPlayerId }: TournamentTabl
     }
 
     return stats;
-  }, [tournament, sortField, sortDirection, isPointBased]);
+  }, [tournament, sortField, sortDirection, isPointBased, isSwissSystem, isElimination]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -201,11 +266,13 @@ export function TournamentTable({ tournament, selectedPlayerId }: TournamentTabl
       <ChevronUp className="w-4 h-4" />;
   };
 
-  // Get visible columns based on scoring type
+  // Get visible columns based on tournament format
   const visibleColumns = Object.entries(columnDefinitions).filter(([key]) => {
     if (!isPointBased) {
-      // Hide points-related columns for WIN_LOSS scoring
       return !['pf', 'pa', 'pd', 'd'].includes(key);
+    }
+    if (!isSwissSystem) {
+      return key !== 'buchholz';
     }
     return true;
   });
@@ -266,6 +333,11 @@ export function TournamentTable({ tournament, selectedPlayerId }: TournamentTabl
                 <th className="px-6 py-4 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Form
                 </th>
+                {isElimination && (
+                  <th className="px-6 py-4 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                    Status
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
@@ -281,6 +353,7 @@ export function TournamentTable({ tournament, selectedPlayerId }: TournamentTabl
                       group transition-colors duration-150
                       ${player.id === selectedPlayerId ? 'bg-accent/5' : 'hover:bg-muted/5'}
                       ${expandedPlayerId === player.id ? 'bg-muted/10' : ''}
+                      ${player.eliminated ? 'opacity-50' : ''}
                     `}
                     onClick={() => setExpandedPlayerId(expandedPlayerId === player.id ? null : player.id)}
                   >
@@ -318,6 +391,9 @@ export function TournamentTable({ tournament, selectedPlayerId }: TournamentTabl
                     {!isPointBased && (
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.losses}</td>
                     )}
+                    {isSwissSystem && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.buchholzScore}</td>
+                    )}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-center font-bold text-gray-900 dark:text-gray-100">{player.tournamentPoints}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <div className="flex justify-center gap-1">
@@ -326,6 +402,14 @@ export function TournamentTable({ tournament, selectedPlayerId }: TournamentTabl
                         ))}
                       </div>
                     </td>
+                    {isElimination && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                        <BracketIndicator 
+                          bracket={player.bracket}
+                          eliminated={player.eliminated}
+                        />
+                      </td>
+                    )}
                   </motion.tr>
                 ))}
               </AnimatePresence>
@@ -345,6 +429,8 @@ export function TournamentTable({ tournament, selectedPlayerId }: TournamentTabl
             exit={{ opacity: 0 }}
             className={`${containers.card} ${
               player.id === selectedPlayerId ? 'bg-accent/5' : ''
+            } ${
+              player.eliminated ? 'opacity-50' : ''
             }`}
           >
             <div className="flex justify-between items-start mb-4">
@@ -364,6 +450,14 @@ export function TournamentTable({ tournament, selectedPlayerId }: TournamentTabl
                     <span className="ml-2 text-xs text-accent/80">(You)</span>
                   )}
                 </h3>
+                {isElimination && (
+                  <div className="mt-1">
+                    <BracketIndicator 
+                      bracket={player.bracket}
+                      eliminated={player.eliminated}
+                    />
+                  </div>
+                )}
               </div>
               <div className="text-2xl font-bold">{player.tournamentPoints}</div>
             </div>
@@ -393,6 +487,13 @@ export function TournamentTable({ tournament, selectedPlayerId }: TournamentTabl
                   <div className="text-xs text-gray-500 dark:text-gray-400">Points Against</div>
                   <div className="text-lg">{player.pointsConceded}</div>
                 </div>
+              </div>
+            )}
+
+            {isSwissSystem && (
+              <div className="mb-4">
+                <div className="text-xs text-gray-500 dark:text-gray-400">Buchholz Score</div>
+                <div className="text-lg">{player.buchholzScore}</div>
               </div>
             )}
 

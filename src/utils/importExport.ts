@@ -1,10 +1,10 @@
-import { Tournament, ScoringType, PointsConfig, TournamentExport, ImportError } from '../types/tournament';
+import { Tournament, ScoringType, PointsConfig, TournamentExport, ImportError, TournamentPhase, SwissSystemConfig, TeamStatus, BracketPosition } from '../types/tournament';
 import { encodeTournament, decodeTournament } from './shortener';
 
 // Validation constants
 const MAX_FILE_SIZE = 1024 * 1024; // 1MB
 const VALID_SHARE_CODE_REGEX = /^[A-Za-z0-9_-]+$/;
-const CURRENT_VERSION = 6;
+const CURRENT_VERSION = 7; // Incremented for new format support
 
 class TournamentImportError extends Error implements ImportError {
   constructor(message: string, public readonly code: string) {
@@ -169,72 +169,86 @@ function validateAndNormalizeTournament(data: any): Tournament {
     }
 
     const now = new Date().toISOString();
-    const scoringType: ScoringType = ['WIN_LOSS', 'POINTS'].includes(data.pointsConfig?.type) 
-      ? data.pointsConfig.type 
-      : 'WIN_LOSS';
+    const phase: TournamentPhase = validatePhase(data.phase);
+    const scoringType: ScoringType = validateScoringType(data.pointsConfig?.type);
 
     const pointsConfig: PointsConfig = {
       type: scoringType,
       win: Number(data.pointsConfig?.win) || (scoringType === 'WIN_LOSS' ? 1 : 3),
       loss: Number(data.pointsConfig?.loss) || 0,
-      ...(scoringType === 'POINTS' && data.pointsConfig?.draw !== undefined && {
-        draw: Number(data.pointsConfig.draw)
+      ...(scoringType === 'POINTS' && {
+        draw: Number(data.pointsConfig?.draw) || 1,
+        byePoints: Number(data.pointsConfig?.byePoints) || 3
       })
     };
 
     const teams = data.teams.map((team: any, index: number) => ({
       id: String(team.id || `t${index}`),
       name: String(team.name || `Team ${index + 1}`),
-      status: team.status === 'WITHDRAWN' ? 'WITHDRAWN' : 'ACTIVE',
+      status: validateTeamStatus(team.status),
       played: Math.max(0, Number(team.played) || 0),
-      won: Math.max(0, Number(team.won) || 0),
-      lost: Math.max(0, Number(team.played || 0) - Number(team.won || 0)),
-      points: calculatePoints(
-        Math.max(0, Number(team.won) || 0),
-        Math.max(0, Number(team.played) || 0),
-        pointsConfig
-      )
+      wins: Math.max(0, Number(team.wins) || 0),
+      losses: Math.max(0, Number(team.losses) || 0),
+      points: Number(team.points) || 0,
+      ...(phase === 'SWISS_SYSTEM' && {
+        buchholzScore: Number(team.buchholzScore) || 0
+      }),
+      ...(phase === 'SINGLE_ELIMINATION' && {
+        bracket: validateBracketPosition(team.bracket),
+        status: team.status === 'ELIMINATED' ? 'ELIMINATED' as TeamStatus : 'ACTIVE' as TeamStatus
+      })
     }));
 
-    const fixtures = data.fixtures.map((fixture: any, index: number) => {
-      const base = {
-        id: String(fixture.id || `f${index}`),
-        homeTeamId: String(fixture.homeTeamId),
-        awayTeamId: String(fixture.awayTeamId),
-        played: Boolean(fixture.played),
-        phase: fixture.phase === 'AWAY' ? 'AWAY' : 'HOME',
-        date: fixture.date || now,
-        datePlayed: fixture.datePlayed || now
-      };
+    const fixtures = data.fixtures.map((fixture: any, index: number) => ({
+      id: String(fixture.id || `f${index}`),
+      homeTeamId: String(fixture.homeTeamId),
+      awayTeamId: String(fixture.awayTeamId),
+      played: Boolean(fixture.played),
+      round: Number(fixture.round) || 1,
+      datePlayed: fixture.datePlayed || now,
+      ...(scoringType === 'POINTS' && {
+        homeScore: fixture.homeScore !== undefined ? Number(fixture.homeScore) : undefined,
+        awayScore: fixture.awayScore !== undefined ? Number(fixture.awayScore) : undefined
+      }),
+      ...(scoringType === 'WIN_LOSS' && {
+        winner: fixture.winner
+      }),
+      ...(phase === 'SINGLE_ELIMINATION' && {
+        bracket: validateBracketPosition(fixture.bracket),
+        significance: String(fixture.significance || '')
+      })
+    }));
 
-      if (scoringType === 'POINTS') {
-        return {
-          ...base,
-          ...(fixture.homeScore !== undefined && { 
-            homeScore: Math.max(0, Number(fixture.homeScore))
-          }),
-          ...(fixture.awayScore !== undefined && { 
-            awayScore: Math.max(0, Number(fixture.awayScore))
-          })
-        };
-      } else {
-        return {
-          ...base,
-          ...(fixture.winner && { winner: String(fixture.winner) })
-        };
-      }
-    });
-
-    return {
+    const tournament: Tournament = {
       id: String(data.id),
       name: String(data.name),
-      phase: ['SINGLE', 'HOME_AND_AWAY'].includes(data.phase) ? data.phase : 'SINGLE',
+      phase,
       pointsConfig,
       teams,
       fixtures,
       dateCreated: data.dateCreated || now,
-      dateModified: now
+      dateModified: now,
+      progress: {
+        currentRound: Number(data.progress?.currentRound) || 1,
+        totalRounds: Number(data.progress?.totalRounds) || 1,
+        phase,
+        roundComplete: Boolean(data.progress?.roundComplete),
+        requiresNewPairings: Boolean(data.progress?.requiresNewPairings),
+        ...(phase === 'SINGLE_ELIMINATION' && {
+          bracketStage: String(data.progress?.bracketStage || '')
+        })
+      }
     };
+
+    // Add format-specific configurations
+    if (phase === 'SWISS_SYSTEM') {
+      tournament.swissConfig = validateSwissConfig(data.swissConfig);
+    }
+    if (phase === 'SINGLE_ELIMINATION') {
+      tournament.seedMethod = data.seedMethod || 'RANDOM';
+    }
+
+    return tournament;
   } catch (error) {
     console.error('Validation error:', error);
     throw new TournamentImportError(
@@ -244,17 +258,28 @@ function validateAndNormalizeTournament(data: any): Tournament {
   }
 }
 
-function calculatePoints(wins: number, played: number, config: PointsConfig): number {
-  const losses = played - wins;
-  
-  if (config.type === 'WIN_LOSS') {
-    return wins * config.win + losses * config.loss;
-  }
-  
-  const draws = config.draw !== undefined ? 
-    played - wins - losses : 0;
-  
-  return wins * config.win + 
-         losses * config.loss + 
-         (config.draw ? draws * config.draw : 0);
+function validatePhase(phase: any): TournamentPhase {
+  const validPhases: TournamentPhase[] = ['ROUND_ROBIN_SINGLE', 'SWISS_SYSTEM', 'SINGLE_ELIMINATION'];
+  return validPhases.includes(phase) ? phase : 'ROUND_ROBIN_SINGLE';
+}
+
+function validateScoringType(type: any): ScoringType {
+  return type === 'POINTS' ? 'POINTS' : 'WIN_LOSS';
+}
+
+function validateTeamStatus(status: any): TeamStatus {
+  return status === 'ELIMINATED' ? 'ELIMINATED' : 'ACTIVE';
+}
+
+function validateBracketPosition(bracket: any): BracketPosition {
+  return bracket === 'CONSOLATION' ? 'CONSOLATION' : 'WINNERS';
+}
+
+function validateSwissConfig(config: any): SwissSystemConfig {
+  return {
+    maxRounds: Number(config?.maxRounds) || 0,
+    byeHandling: config?.byeHandling === 'LOWEST_RANKED' ? 'LOWEST_RANKED' : 'RANDOM',
+    tiebreakers: Array.isArray(config?.tiebreakers) ? config.tiebreakers : ['BUCHHOLZ', 'HEAD_TO_HEAD', 'WINS'],
+    byePoints: Number(config?.byePoints) || 3
+  };
 }

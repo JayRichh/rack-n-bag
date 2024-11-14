@@ -12,6 +12,7 @@ import { TournamentSettings } from './tournament/TournamentSettings';
 import { TournamentPreferences } from './tournament/TournamentPreferences';
 import { TournamentTable } from './tournament/TournamentTable';
 import { TournamentSync } from './tournament/TournamentSync';
+import { TournamentBracket } from './tournament/TournamentBracket';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { containers } from '../lib/design-system';
 import { useGlobalSettings } from '../hooks/useGlobalSettings';
@@ -25,7 +26,6 @@ interface TournamentViewProps {
   onBack: () => void;
 }
 
-// Type guard to ensure all required tournament properties are present
 function isValidTournament(obj: Partial<Tournament>): obj is Tournament {
   return !!(
     obj.id &&
@@ -57,9 +57,10 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
         f.played && (f.homeTeamId === player.id || f.awayTeamId === player.id)
       );
 
-      let won = 0;
-      let lost = 0;
+      let wins = 0;
+      let losses = 0;
       let points = 0;
+      let buchholzScore = 0;
 
       matches.forEach(match => {
         const isHome = match.homeTeamId === player.id;
@@ -69,38 +70,49 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
           const opponentScore = isHome ? match.awayScore! : match.homeScore!;
 
           if (playerScore > opponentScore) {
-            won++;
+            wins++;
             points += pointsConfig.win;
           } else if (playerScore < opponentScore) {
-            lost++;
+            losses++;
             points += pointsConfig.loss;
           } else {
             points += pointsConfig.draw || 0;
           }
         } else {
-          // WIN_LOSS scoring
           if (match.winner === player.id) {
-            won++;
+            wins++;
             points += pointsConfig.win;
           } else {
-            lost++;
+            losses++;
             points += pointsConfig.loss;
           }
         }
       });
 
+      if (tournament.phase === 'SWISS_SYSTEM') {
+        const opponents = matches.map(m => 
+          m.homeTeamId === player.id ? m.awayTeamId : m.homeTeamId
+        );
+        buchholzScore = opponents.reduce((score, oppId) => {
+          const opponent = teams.find(t => t.id === oppId);
+          return score + (opponent?.points || 0);
+        }, 0);
+      }
+
       return {
         ...player,
         played: matches.length,
-        won,
-        lost,
-        points
+        wins,
+        losses,
+        points,
+        buchholzScore: tournament.phase === 'SWISS_SYSTEM' ? buchholzScore : undefined,
+        bracket: player.bracket,
+        status: player.status
       };
     });
-  }, []);
+  }, [tournament.phase]);
 
   const [currentTournament, setCurrentTournament] = useState<Tournament>(() => {
-    // Initialize tournament with calculated stats
     const updatedPlayers = calculatePlayerStats(
       tournament.teams,
       tournament.fixtures,
@@ -121,14 +133,12 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
   const [isInitialized, setIsInitialized] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
 
-  // Get view mode from URL or default to 'STATS'
   const viewMode = (searchParams.get('view') as ViewMode) || 'STATS';
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  // Initialize settings and participant from localStorage
   useEffect(() => {
     if (!isMounted) return;
 
@@ -142,8 +152,6 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
       if (storedSettings) {
         const parsedSettings = JSON.parse(storedSettings);
         setSettings(parsedSettings);
-        
-        // Initialize global settings
         updateGlobalSettings({
           lowMotion: parsedSettings.lowMotion
         });
@@ -156,7 +164,6 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
     }
   }, [tournament.id, isMounted, updateGlobalSettings]);
 
-  // Save settings to localStorage
   useEffect(() => {
     if (!isInitialized || !isMounted) return;
 
@@ -167,7 +174,6 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
     }
   }, [settings, tournament.id, isInitialized, isMounted]);
 
-  // Handle setting changes
   const handleSettingChange = useCallback((key: keyof Settings) => {
     setSettings(prev => {
       const newSettings = {
@@ -175,7 +181,6 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
         [key]: !prev[key]
       };
 
-      // Only update global settings for motion
       if (key === 'lowMotion') {
         updateGlobalSettings({ lowMotion: !prev.lowMotion });
       }
@@ -184,7 +189,6 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
     });
   }, [updateGlobalSettings]);
 
-  // Save selected player to localStorage
   useEffect(() => {
     if (!isInitialized || !isMounted) return;
 
@@ -207,22 +211,24 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
   ) => {
     try {
       const isPointBased = currentTournament.pointsConfig.type === 'POINTS';
+      const isElimination = currentTournament.phase === 'SINGLE_ELIMINATION';
+      const isSwissSystem = currentTournament.phase === 'SWISS_SYSTEM';
       
       const updatedFixture = {
         ...fixture,
         played: true,
         datePlayed: new Date().toISOString(),
-        // For points-based scoring, include scores
         ...(isPointBased ? {
           homeScore,
           awayScore,
           winner: undefined
         } : {
-          // For win/loss scoring, include winner and clear scores
           homeScore: undefined,
           awayScore: undefined,
           winner: winnerId
-        })
+        }),
+        bracket: isElimination ? fixture.bracket : undefined,
+        significance: isElimination ? fixture.significance : undefined
       };
 
       const existingFixtureIndex = currentTournament.fixtures.findIndex(f => 
@@ -233,9 +239,50 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
         ? currentTournament.fixtures.map((f, i) => i === existingFixtureIndex ? updatedFixture : f)
         : [...currentTournament.fixtures, updatedFixture];
 
-      // Calculate updated player stats
+      let updatedTeams = currentTournament.teams;
+
+      // Handle elimination tournament bracket movement
+      if (isElimination && winnerId) {
+        const loserId = winnerId === fixture.homeTeamId ? fixture.awayTeamId : fixture.homeTeamId;
+        updatedTeams = updatedTeams.map(team => {
+          if (team.id === loserId && fixture.bracket === 'WINNERS') {
+            return {
+              ...team,
+              status: 'ELIMINATED',
+              bracket: 'CONSOLATION'
+            };
+          }
+          if (team.id === winnerId && fixture.bracket === 'WINNERS') {
+            return {
+              ...team,
+              bracket: 'WINNERS',
+              status: 'ACTIVE'
+            };
+          }
+          return team;
+        });
+      }
+
+      // Handle Swiss system bye points
+      if (isSwissSystem) {
+        const byePoints = currentTournament.pointsConfig.byePoints || currentTournament.swissConfig?.byePoints || 3;
+        updatedTeams = updatedTeams.map(team => {
+          const hasBye = updatedFixtures.some(f => 
+            f.played && (f.homeTeamId === 'BYE' && f.awayTeamId === team.id) ||
+            (f.homeTeamId === team.id && f.awayTeamId === 'BYE')
+          );
+          if (hasBye) {
+            return {
+              ...team,
+              points: team.points + byePoints
+            };
+          }
+          return team;
+        });
+      }
+
       const updatedPlayers = calculatePlayerStats(
-        currentTournament.teams,
+        updatedTeams,
         updatedFixtures,
         currentTournament.pointsConfig
       );
@@ -247,9 +294,36 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
         dateModified: new Date().toISOString()
       };
 
+      // Update tournament progress
+      if (isElimination) {
+        const roundFixtures = updatedFixtures.filter(f => f.round === fixture.round);
+        const roundComplete = roundFixtures.every(f => f.played);
+        
+        if (roundComplete) {
+          const remainingWinners = updatedPlayers.filter(t => t.bracket === 'WINNERS' && t.status === 'ACTIVE');
+          const consolationTeams = updatedPlayers.filter(t => t.bracket === 'CONSOLATION' && t.status === 'ACTIVE');
+          
+          updatedTournament.progress = {
+            ...updatedTournament.progress,
+            roundComplete,
+            requiresNewPairings: remainingWinners.length > 1 || consolationTeams.length > 1
+          };
+        }
+      } else if (isSwissSystem) {
+        const roundFixtures = updatedFixtures.filter(f => f.round === fixture.round);
+        const roundComplete = roundFixtures.every(f => f.played);
+        
+        if (roundComplete) {
+          updatedTournament.progress = {
+            ...updatedTournament.progress,
+            roundComplete,
+            requiresNewPairings: true
+          };
+        }
+      }
+
       setCurrentTournament(updatedTournament);
       storage.saveTournament(updatedTournament);
-      // Broadcast update to synced peers
       broadcastUpdate(updatedTournament);
       showToast('Match result updated successfully', 'success');
     } catch (error) {
@@ -274,7 +348,6 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
 
   return (
     <div className="flex-1 flex flex-col w-full">
-      {/* Header */}
       <div className="w-full bg-background/95 backdrop-blur-sm border-b border-border">
         <div className={`${containers.wrapper} ${containers.section}`}>
           <TournamentHeader
@@ -307,7 +380,6 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
         </div>
       </div>
 
-      {/* Settings Panel */}
       <AnimatePresence>
         {(showSettings || showPreferences || showSync) && (
           <motion.div
@@ -339,7 +411,6 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
 
                       setCurrentTournament(finalTournament);
                       storage.saveTournament(finalTournament);
-                      // Broadcast update to synced peers
                       broadcastUpdate(finalTournament);
                       showToast('Tournament settings saved', 'success');
                     } catch (error) {
@@ -353,6 +424,7 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
 
               {showPreferences && (
                 <TournamentPreferences
+                  tournament={currentTournament}
                   settings={settings}
                   onSettingChange={handleSettingChange}
                   showSettings={showPreferences}
@@ -360,13 +432,12 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
                 />
               )}
 
-              {showSync && <TournamentSync />}
+              {showSync && <TournamentSync tournament={currentTournament} />}
             </div>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* Main Content */}
       <main className="flex-1 w-full overflow-x-auto">
         <div className={`${containers.wrapper} py-8`}>
           <div className={containers.section}>
@@ -386,7 +457,7 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
                   />
                 )}
 
-                {viewMode === 'GRID' && (
+                {viewMode === 'GRID' && currentTournament.phase !== 'SINGLE_ELIMINATION' && (
                   <ResultsMatrix
                     tournament={currentTournament}
                     selectedPlayerId={settings.highlightMyMatches ? selectedPlayerId : undefined}
@@ -394,17 +465,23 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
                   />
                 )}
 
-                {viewMode === 'TABLE' && (
+                {viewMode === 'TABLE' && currentTournament.phase !== 'SINGLE_ELIMINATION' && (
                   <TournamentTable
                     tournament={currentTournament}
                     selectedPlayerId={selectedPlayerId}
+                  />
+                )}
+
+                {(viewMode === 'BRACKET' || currentTournament.phase === 'SINGLE_ELIMINATION') && (
+                  <TournamentBracket
+                    tournament={currentTournament}
+                    onUpdateResult={handleFixtureUpdate}
                   />
                 )}
               </motion.div>
             </AnimatePresence>
           </div>
 
-          {/* Scroll to Top Button */}
           <ScrollToTop threshold={300} />
         </div>
       </main>

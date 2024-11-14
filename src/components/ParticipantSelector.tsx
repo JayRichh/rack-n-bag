@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Tournament, Team } from '../types/tournament';
+import { Tournament, Team, BracketPosition } from '../types/tournament';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { 
   User,
@@ -10,7 +10,11 @@ import {
   CheckCircle2,
   Trophy,
   Target,
-  Info
+  Info,
+  Shield,
+  XCircle,
+  GitBranch,
+  Calculator
 } from 'lucide-react';
 
 interface ParticipantSelectorProps {
@@ -22,8 +26,10 @@ interface ParticipantSelectorProps {
 export function ParticipantSelector({ tournament, onSelect, variant = 'default' }: ParticipantSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<Team | null>(null);
+  const isPointBased = tournament.pointsConfig.type === 'POINTS';
+  const isElimination = tournament.phase === 'SINGLE_ELIMINATION';
+  const isSwissSystem = tournament.phase === 'SWISS_SYSTEM';
 
-  // Load initial selection from localStorage
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const storedPlayerId = localStorage.getItem(`tournament_${tournament.id}_selected_player`);
@@ -48,44 +54,80 @@ export function ParticipantSelector({ tournament, onSelect, variant = 'default' 
         wins: 0,
         draws: 0,
         losses: 0,
-        form: [] as ('W' | 'L' | 'D')[]
+        points: player.points || 0,
+        buchholzScore: player.buchholzScore,
+        form: [] as ('W' | 'L' | 'D')[],
+        bracket: player.bracket,
+        eliminated: player.status === 'ELIMINATED'
       };
 
       matches.forEach(match => {
-        const isHome = match.homeTeamId === player.id;
-        const playerScore = isHome ? match.homeScore! : match.awayScore!;
-        const opponentScore = isHome ? match.awayScore! : match.homeScore!;
+        if (isPointBased) {
+          const isHome = match.homeTeamId === player.id;
+          const playerScore = isHome ? match.homeScore! : match.awayScore!;
+          const opponentScore = isHome ? match.awayScore! : match.homeScore!;
 
-        if (playerScore > opponentScore) {
-          stats.wins++;
-          stats.form.push('W');
-        } else if (playerScore < opponentScore) {
-          stats.losses++;
-          stats.form.push('L');
+          if (playerScore > opponentScore) {
+            stats.wins++;
+            stats.form.push('W');
+          } else if (playerScore < opponentScore) {
+            stats.losses++;
+            stats.form.push('L');
+          } else {
+            stats.draws++;
+            stats.form.push('D');
+          }
         } else {
-          stats.draws++;
-          stats.form.push('D');
+          if (match.winner === player.id) {
+            stats.wins++;
+            stats.form.push('W');
+          } else {
+            stats.losses++;
+            stats.form.push('L');
+          }
         }
       });
 
-      // Keep only last 3 matches for form
       stats.form = stats.form.slice(-3);
 
       return {
         player,
         ...stats
       };
-    }).sort((a, b) => b.wins - a.wins || a.player.name.localeCompare(b.player.name));
-  }, [tournament]);
+    }).sort((a, b) => {
+      if (isElimination) {
+        // Sort by bracket first, then by elimination status
+        if (a.bracket !== b.bracket) {
+          if (a.bracket === 'WINNERS') return -1;
+          if (b.bracket === 'WINNERS') return 1;
+        }
+        if (a.eliminated !== b.eliminated) {
+          return a.eliminated ? 1 : -1;
+        }
+      }
+
+      if (isSwissSystem && a.buchholzScore !== b.buchholzScore) {
+        return (b.buchholzScore || 0) - (a.buchholzScore || 0);
+      }
+
+      return b.points - a.points || b.wins - a.wins || a.player.name.localeCompare(b.player.name);
+    });
+  }, [tournament, isPointBased, isElimination, isSwissSystem]);
 
   const handleSelect = (player: Team) => {
     setSelectedPlayer(player);
     onSelect(player.id);
     setIsOpen(false);
-    // Save selection to localStorage
     if (typeof window !== 'undefined') {
       localStorage.setItem(`tournament_${tournament.id}_selected_player`, player.id);
     }
+  };
+
+  const getBracketIcon = (bracket?: BracketPosition, eliminated?: boolean) => {
+    if (eliminated) return <XCircle className="w-4 h-4 text-red-500" />;
+    if (bracket === 'WINNERS') return <Trophy className="w-4 h-4 text-amber-500" />;
+    if (bracket === 'CONSOLATION') return <Shield className="w-4 h-4 text-blue-500" />;
+    return null;
   };
 
   const FormBadge = ({ result }: { result: 'W' | 'L' | 'D' }) => {
@@ -106,7 +148,7 @@ export function ParticipantSelector({ tournament, onSelect, variant = 'default' 
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-          Player Focus
+          Participant Focus
         </span>
         <Tooltip.Root>
           <Tooltip.Trigger asChild>
@@ -119,7 +161,7 @@ export function ParticipantSelector({ tournament, onSelect, variant = 'default' 
               className="z-50 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg max-w-[250px] text-sm"
               sideOffset={5}
             >
-              Select a player to highlight their results and performance in the tournament
+              Select a participant to highlight their results and performance
               <Tooltip.Arrow className="fill-white dark:fill-gray-800" />
             </Tooltip.Content>
           </Tooltip.Portal>
@@ -143,7 +185,7 @@ export function ParticipantSelector({ tournament, onSelect, variant = 'default' 
             <div className="flex items-center gap-2">
               <User className="w-4 h-4 text-gray-400" />
               <span className="text-gray-900 dark:text-gray-100 font-medium">
-                {selectedPlayer ? selectedPlayer.name : 'Select Player'}
+                {selectedPlayer ? selectedPlayer.name : 'Select Participant'}
               </span>
             </div>
             <ChevronDown className={`
@@ -163,31 +205,36 @@ export function ParticipantSelector({ tournament, onSelect, variant = 'default' 
                 className="absolute z-50 w-full mt-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg"
               >
                 <div className="max-h-[280px] overflow-y-auto">
-                  {playerStats.map(({ player, wins, draws, losses, form }) => (
+                  {playerStats.map(({ player, wins, draws, losses, points, buchholzScore, form, bracket, eliminated }) => (
                     <Tooltip.Root key={player.id}>
                       <Tooltip.Trigger asChild>
                         <motion.button
                           className={`
                             w-full flex items-center justify-between px-3 py-2.5
+                            ${eliminated ? 'opacity-50' : ''}
                             ${player.id === selectedPlayer?.id ? 'bg-accent/5 text-accent' : 'text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/50'}
                             ${variant === 'compact' ? 'text-sm' : 'text-base'}
                             transition-colors
                           `}
                           onClick={() => handleSelect(player)}
                         >
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            {player.id === selectedPlayer?.id && (
+                          <div className="flex items-center gap-2 min-w-0">
+                            {player.id === selectedPlayer?.id ? (
                               <CheckCircle2 className="w-4 h-4 shrink-0" />
+                            ) : (
+                              getBracketIcon(bracket, eliminated)
                             )}
                             <span className="font-medium truncate">{player.name}</span>
                           </div>
-                          {form.length > 0 && (
-                            <div className="flex items-center gap-1.5 ml-2">
-                              {form.map((result, i) => (
-                                <FormBadge key={i} result={result} />
-                              ))}
-                            </div>
-                          )}
+                          <div className="flex items-center gap-2 ml-2">
+                            {form.length > 0 && (
+                              <div className="flex items-center gap-1">
+                                {form.map((result, i) => (
+                                  <FormBadge key={i} result={result} />
+                                ))}
+                              </div>
+                            )}
+                          </div>
                         </motion.button>
                       </Tooltip.Trigger>
                       <Tooltip.Portal>
@@ -202,11 +249,27 @@ export function ParticipantSelector({ tournament, onSelect, variant = 'default' 
                                 {wins} {wins === 1 ? 'Win' : 'Wins'}
                               </span>
                             </div>
-                            {draws > 0 && (
+                            {isPointBased && draws > 0 && (
                               <div className="flex items-center gap-2">
                                 <Target className="w-4 h-4 text-gray-400" />
                                 <span className="text-sm">
                                   {draws} {draws === 1 ? 'Draw' : 'Draws'}
+                                </span>
+                              </div>
+                            )}
+                            {isSwissSystem && buchholzScore !== undefined && (
+                              <div className="flex items-center gap-2">
+                                <Calculator className="w-4 h-4 text-gray-400" />
+                                <span className="text-sm">
+                                  Buchholz: {buchholzScore}
+                                </span>
+                              </div>
+                            )}
+                            {isElimination && bracket && (
+                              <div className="flex items-center gap-2">
+                                <GitBranch className="w-4 h-4 text-gray-400" />
+                                <span className="text-sm">
+                                  {bracket === 'WINNERS' ? 'Winners Bracket' : 'Consolation Bracket'}
                                 </span>
                               </div>
                             )}

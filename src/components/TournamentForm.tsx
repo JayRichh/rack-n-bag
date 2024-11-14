@@ -3,9 +3,10 @@
 import React, { useState, Suspense } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Tournament, Team, TournamentPhase, TeamStatus, ScoringType } from '../types/tournament';
+import { Tournament, Team, TournamentPhase, TeamStatus, ScoringType, SwissSystemConfig } from '../types/tournament';
 import { storage } from '../utils/storage';
 import { typography, containers, spacing, layout } from '../lib/design-system';
+import { initializeTournament } from '../utils/tournament-systems';
 
 export interface TournamentFormProps {
   tournament?: Tournament;
@@ -57,23 +58,43 @@ const teamVariants = {
 export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormProps) {
   const [name, setName] = useState(tournament?.name || '');
   const [teams, setTeams] = useState<Team[]>(tournament?.teams || []);
-  const [phase, setPhase] = useState<TournamentPhase>(tournament?.phase || 'SINGLE');
-  const [scoringType, setScoringType] = useState<ScoringType>(tournament?.pointsConfig.type || 'WIN_LOSS');
+  const [phase, setPhase] = useState<TournamentPhase>(tournament?.phase || 'ROUND_ROBIN_SINGLE');
+  const [scoringType, setScoringType] = useState<ScoringType>(tournament?.pointsConfig.type || 'POINTS');
   const [pointsConfig, setPointsConfig] = useState(tournament?.pointsConfig || {
-    type: 'WIN_LOSS' as ScoringType,
-    win: 1,
-    loss: 0
+    type: 'POINTS' as ScoringType,
+    win: 3,
+    loss: 0,
+    draw: 1,
+    byePoints: 3
   });
   const [newTeamName, setNewTeamName] = useState('');
+  const [seedMethod, setSeedMethod] = useState(tournament?.seedMethod || 'RANDOM');
+  const defaultSwissConfig: SwissSystemConfig = {
+    maxRounds: tournament?.swissConfig?.maxRounds || 0,
+    byeHandling: tournament?.swissConfig?.byeHandling || 'RANDOM',
+    tiebreakers: tournament?.swissConfig?.tiebreakers || ['BUCHHOLZ', 'HEAD_TO_HEAD', 'WINS'],
+    byePoints: tournament?.swissConfig?.byePoints || pointsConfig.byePoints || 3
+  };
+  const [swissConfig, setSwissConfig] = useState<SwissSystemConfig>(defaultSwissConfig);
 
   const handleScoringTypeChange = (type: ScoringType) => {
     setScoringType(type);
-    setPointsConfig({
+    const newPointsConfig = {
       type,
       win: type === 'WIN_LOSS' ? 1 : 3,
       loss: 0,
-      ...(type === 'POINTS' ? { draw: 1 } : {})
-    });
+      draw: type === 'POINTS' ? 1 : undefined,
+      byePoints: type === 'POINTS' ? 3 : 1
+    };
+    setPointsConfig(newPointsConfig);
+    
+    // Update Swiss config bye points to match
+    if (phase === 'SWISS_SYSTEM') {
+      setSwissConfig(prev => ({
+        ...prev,
+        byePoints: newPointsConfig.byePoints || 3
+      }));
+    }
   };
 
   const handleAddTeam = () => {
@@ -83,9 +104,10 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
         name: newTeamName.trim(),
         status: 'ACTIVE' as TeamStatus,
         played: 0,
-        won: 0,
-        lost: 0,
-        points: 0
+        wins: 0,
+        losses: 0,
+        points: 0,
+        seed: teams.length + 1
       };
       setTeams([...teams, newTeam]);
       setNewTeamName('');
@@ -101,19 +123,25 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
 
     if (!name.trim() || teams.length < 2) return;
 
-    const tournamentData: Tournament = {
-      id: tournament?.id || uuidv4(),
-      name: name.trim(),
+    // Ensure Swiss config has proper maxRounds and byePoints
+    let finalSwissConfig: SwissSystemConfig | undefined;
+    if (phase === 'SWISS_SYSTEM') {
+      finalSwissConfig = {
+        ...swissConfig,
+        maxRounds: swissConfig.maxRounds || Math.ceil(Math.log2(teams.length)),
+        byePoints: pointsConfig.byePoints || 3
+      };
+    }
+
+    const tournamentData = initializeTournament(
+      name.trim(),
       teams,
       phase,
-      pointsConfig: {
-        ...pointsConfig,
-        type: scoringType
-      },
-      fixtures: tournament?.fixtures || [],
-      dateCreated: tournament?.dateCreated || new Date().toISOString(),
-      dateModified: new Date().toISOString()
-    };
+      {
+        swissConfig: finalSwissConfig,
+        seedMethod: phase === 'SINGLE_ELIMINATION' ? seedMethod : undefined
+      }
+    );
 
     storage.saveTournament(tournamentData);
     onSave();
@@ -121,7 +149,7 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
 
   return (
     <motion.div 
-      className={`${layout.maxWidth} ${layout.contentPadding} py-8`}
+      className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8"
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: 0.15 }}
@@ -150,30 +178,117 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Tournament Name
               </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="form-input"
-                placeholder="Enter tournament name"
-                required
-              />
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-accent focus:border-transparent"
+          placeholder="Enter tournament name"
+          required
+        />
+
+        <select
+          value={phase}
+          onChange={(e) => setPhase(e.target.value as TournamentPhase)}
+          className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-accent focus:border-transparent"
+        >
+                <option value="ROUND_ROBIN_SINGLE">Single Round-Robin</option>
+                <option value="SWISS_SYSTEM">Swiss System</option>
+                <option value="SINGLE_ELIMINATION">Single Elimination with Consolation</option>
+        </select>
             </motion.div>
 
-            {/* Tournament Phase */}
-            <motion.div variants={sectionVariants}>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Tournament Format
-              </label>
-              <select
-                value={phase}
-                onChange={(e) => setPhase(e.target.value as TournamentPhase)}
-                className="form-select"
-              >
-                <option value="SINGLE">Single Round</option>
-                <option value="HOME_AND_AWAY">Home and Away</option>
-              </select>
-            </motion.div>
+            {/* Format-specific Configuration */}
+            {phase === 'SWISS_SYSTEM' && (
+              <motion.div variants={sectionVariants}>
+                <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100 mb-4`}>Swiss System Settings</h3>
+                
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Maximum Rounds
+                    </label>
+                    <input
+                      type="number"
+                      value={swissConfig.maxRounds}
+                      onChange={(e) => setSwissConfig(prev => ({
+                        ...prev,
+                        maxRounds: parseInt(e.target.value)
+                      }))}
+                      className="form-input"
+                      min={0}
+                      placeholder="Leave 0 for automatic"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Bye Handling
+                    </label>
+                    <select
+                      value={swissConfig.byeHandling}
+                      onChange={(e) => setSwissConfig(prev => ({
+                        ...prev,
+                        byeHandling: e.target.value as 'RANDOM' | 'LOWEST_RANKED'
+                      }))}
+                      className="form-select"
+                    >
+                      <option value="RANDOM">Random Assignment</option>
+                      <option value="LOWEST_RANKED">Assign to Lowest Ranked</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Tiebreakers (in order)
+                    </label>
+                    <div className="space-y-2">
+                      {swissConfig.tiebreakers.map((tiebreaker, index) => (
+                        <div key={index} className="flex items-center gap-2">
+                          <select
+                            value={tiebreaker}
+                            onChange={(e) => {
+                              const newTiebreakers = [...swissConfig.tiebreakers];
+                              newTiebreakers[index] = e.target.value as any;
+                              setSwissConfig(prev => ({
+                                ...prev,
+                                tiebreakers: newTiebreakers
+                              }));
+                            }}
+                            className="form-select"
+                          >
+                            <option value="BUCHHOLZ">Buchholz Score</option>
+                            <option value="HEAD_TO_HEAD">Head-to-Head</option>
+                            <option value="WINS">Total Wins</option>
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+
+            {phase === 'SINGLE_ELIMINATION' && (
+              <motion.div variants={sectionVariants}>
+                <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100 mb-4`}>Bracket Settings</h3>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Seeding Method
+                  </label>
+                  <select
+                    value={seedMethod}
+                    onChange={(e) => setSeedMethod(e.target.value as 'RANDOM' | 'MANUAL' | 'RANKING')}
+                    className="form-select"
+                  >
+                    <option value="RANDOM">Random Seeding</option>
+                    <option value="MANUAL">Manual Seeding</option>
+                    <option value="RANKING">Use Current Rankings</option>
+                  </select>
+                </div>
+              </motion.div>
+            )}
 
             {/* Points Configuration */}
             <motion.div variants={sectionVariants}>
@@ -181,20 +296,20 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
               
               {/* Scoring Type Selection */}
               <div className="grid grid-cols-2 gap-4 mb-6">
-                <button
-                  type="button"
-                  onClick={() => handleScoringTypeChange('WIN_LOSS')}
-                  className={`
-                    p-4 rounded-lg border-2 text-center transition-colors
-                    ${scoringType === 'WIN_LOSS'
-                      ? 'border-primary bg-primary/10'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-primary/50'
-                    }
-                  `}
-                >
+        <button
+          type="button"
+          onClick={() => handleScoringTypeChange('WIN_LOSS')}
+          className={`
+            p-4 rounded-lg border-2 text-center transition-colors
+            ${scoringType === 'WIN_LOSS'
+              ? 'border-accent bg-accent/10 text-accent'
+              : 'border-gray-200 dark:border-gray-700 hover:border-accent/50'
+            }
+          `}
+        >
                   <div className="font-medium">Win/Loss</div>
                   <div className="text-xs text-gray-500 mt-1">Simple tracking</div>
-                </button>
+        </button>
 
                 <button
                   type="button"
@@ -227,19 +342,34 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
                   />
                 </div>
                 {scoringType === 'POINTS' && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Draw Points
-                    </label>
-                    <input
-                      type="number"
-                      value={pointsConfig.draw}
-                      onChange={(e) => setPointsConfig({ ...pointsConfig, draw: parseInt(e.target.value) })}
-                      className="form-input"
-                      min="0"
-                      required
-                    />
-                  </div>
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Draw Points
+                      </label>
+                      <input
+                        type="number"
+                        value={pointsConfig.draw}
+                        onChange={(e) => setPointsConfig({ ...pointsConfig, draw: parseInt(e.target.value) })}
+                        className="form-input"
+                        min="0"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                        Bye Points
+                      </label>
+                      <input
+                        type="number"
+                        value={pointsConfig.byePoints}
+                        onChange={(e) => setPointsConfig({ ...pointsConfig, byePoints: parseInt(e.target.value) })}
+                        className="form-input"
+                        min="0"
+                        required
+                      />
+                    </div>
+                  </>
                 )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -259,7 +389,7 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
 
             {/* Players */}
             <motion.div variants={sectionVariants}>
-              <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100 mb-4`}>Players on Team</h3>
+              <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100 mb-4`}>Players</h3>
               
               {/* Add Player */}
               <div className="flex gap-4 mb-6">
@@ -276,14 +406,14 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
                   className="btn btn-secondary"
                   disabled={!newTeamName.trim()}
                 >
-                  Add Player on Team
+                  Add Player
                 </button>
               </div>
 
               {/* Player List */}
               <div className="space-y-3">
                 <AnimatePresence mode="popLayout">
-                  {teams.map(team => (
+                  {teams.map((team, index) => (
                     <motion.div
                       key={team.id}
                       className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg"
@@ -293,7 +423,10 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
                       exit="exit"
                       layout
                     >
-                      <span className="text-gray-900 dark:text-gray-100">{team.name}</span>
+                      <div className="flex items-center gap-4">
+                        <span className="text-sm text-gray-500">#{index + 1}</span>
+                        <span className="text-gray-900 dark:text-gray-100">{team.name}</span>
+                      </div>
                       <button
                         type="button"
                         onClick={() => handleRemoveTeam(team.id)}
@@ -326,20 +459,20 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
               className="flex justify-end gap-4 pt-6"
               variants={sectionVariants}
             >
-              <button
-                type="button"
-                onClick={onCancel}
-                className="btn btn-ghost"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={!name.trim() || teams.length < 2}
-              >
-                {tournament ? 'Save Changes' : 'Create Tournament'}
-              </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={!name.trim() || teams.length < 2}
+        >
+          {tournament ? 'Save Changes' : 'Create Tournament'}
+        </button>
             </motion.div>
           </Suspense>
         </motion.form>

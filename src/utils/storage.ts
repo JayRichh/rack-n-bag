@@ -1,5 +1,5 @@
 import { Tournament } from '../types/tournament';
-import { testTournament } from './test-data';
+import { testTournaments } from './test-data';
 
 type StorageType = 'localStorage' | 'sessionStorage';
 
@@ -28,7 +28,7 @@ class SafeStorage {
     this.type = type;
     if (typeof window !== 'undefined') {
       window.addEventListener('storage', this.handleStorageEvent);
-      setInterval(this.cleanupExpiredSessions, 60000); // Every minute
+      setInterval(this.cleanupExpiredSessions, 60000);
     }
   }
 
@@ -48,7 +48,6 @@ class SafeStorage {
       const sessions = this.getItem<Record<string, SyncSession>>('tournament_sync_sessions', {});
       let hasChanges = false;
 
-      // Remove sessions older than 5 minutes
       Object.entries(sessions).forEach(([id, session]) => {
         if (Date.now() - new Date(session.lastActive).getTime() > 5 * 60 * 1000) {
           delete sessions[id];
@@ -150,11 +149,11 @@ class SafeStorage {
 
 const safeLocalStorage = new SafeStorage('localStorage');
 
-// Initialize with test data if no tournaments exist
 if (typeof window !== 'undefined') {
   const existingTournaments = safeLocalStorage.getItem<Tournament[]>('tournaments', []);
   if (existingTournaments.length === 0) {
-    safeLocalStorage.setItem('tournaments', [testTournament]);
+    const defaultTournaments = Object.values(testTournaments);
+    safeLocalStorage.setItem('tournaments', defaultTournaments);
   }
 }
 
@@ -186,12 +185,16 @@ export const storage = {
     const filtered = tournaments.filter(t => t.id !== id);
     safeLocalStorage.setItem('tournaments', filtered);
 
-    // Also cleanup any associated sync sessions
     const sessions = this.getSyncSessions();
     if (sessions[id]) {
       delete sessions[id];
       this.saveSyncSessions(sessions);
     }
+  },
+
+  resetToDefaults(): void {
+    const defaultTournaments = Object.values(testTournaments);
+    safeLocalStorage.setItem('tournaments', defaultTournaments);
   },
 
   getSettings(): Settings {

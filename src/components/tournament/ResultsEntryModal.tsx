@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { Modal } from '../Modal';
-import { Team, Fixture, Tournament } from '../../types/tournament';
-import { Info } from 'lucide-react';
+import { Team, Fixture, Tournament, BracketPosition } from '../../types/tournament';
+import { Info, Trophy, Shield } from 'lucide-react';
 import * as Tooltip from '@radix-ui/react-tooltip';
 
 interface ResultsEntryModalProps {
@@ -31,6 +31,21 @@ export function ResultsEntryModal({
   const [error, setError] = useState<string>('');
 
   const isPointBased = tournament.pointsConfig.type === 'POINTS';
+  const isSwissSystem = tournament.phase === 'SWISS_SYSTEM';
+  const isElimination = tournament.phase === 'SINGLE_ELIMINATION';
+  const currentRound = tournament.progress?.currentRound || 1;
+  const bracket = fixture?.bracket || (isElimination ? 'WINNERS' as BracketPosition : undefined);
+
+  const getBracketIcon = (bracket?: BracketPosition) => {
+    switch (bracket) {
+      case 'WINNERS':
+        return <Trophy className="w-4 h-4 text-amber-500" />;
+      case 'CONSOLATION':
+        return <Shield className="w-4 h-4 text-blue-500" />;
+      default:
+        return null;
+    }
+  };
 
   const handlePointsChange = (value: number, isHome: boolean) => {
     setError('');
@@ -64,25 +79,45 @@ export function ResultsEntryModal({
     onClose();
   };
 
+  const modalTitle = (
+    <div className="flex items-center gap-3">
+      <span>Enter Match Result</span>
+      {isElimination && bracket && (
+        <div className="flex items-center gap-1 text-sm">
+          {getBracketIcon(bracket)}
+          <span className={bracket === 'WINNERS' ? 'text-amber-500' : 'text-blue-500'}>
+            {bracket === 'WINNERS' ? 'Winners' : 'Consolation'}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title="Enter Match Result"
+      title={modalTitle}
     >
       <div className="space-y-6 w-full">
         {/* Info Panel */}
         <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-sm space-y-2">
           <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300 font-medium">
             <Info className="w-4 h-4 flex-shrink-0" />
-            <span className="flex-1">Scoring System</span>
+            <span className="flex-1">Match Information</span>
           </div>
           <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 space-y-1">
+            {(isSwissSystem || isElimination) && (
+              <li>Round {currentRound}</li>
+            )}
             <li>Winner gets {tournament.pointsConfig.win} tournament points</li>
             {tournament.pointsConfig.draw !== undefined && (
               <li>Draw awards {tournament.pointsConfig.draw} tournament points</li>
             )}
             <li>Loser gets {tournament.pointsConfig.loss} tournament points</li>
+            {isSwissSystem && tournament.pointsConfig.byePoints !== undefined && (
+              <li>Bye awards {tournament.pointsConfig.byePoints} tournament points</li>
+            )}
           </ul>
         </div>
 
@@ -186,6 +221,22 @@ export function ResultsEntryModal({
         {error && (
           <div className="text-center text-sm text-red-500 min-h-[1.25rem]">
             {error}
+          </div>
+        )}
+
+        {/* Tournament Phase Info */}
+        {(isSwissSystem || isElimination) && (
+          <div className="text-sm text-gray-500 dark:text-gray-400 text-center">
+            {isSwissSystem && (
+              <div>
+                Matches are paired based on current standings
+              </div>
+            )}
+            {isElimination && (
+              <div>
+                Winner advances in the {bracket?.toLowerCase()} bracket
+              </div>
+            )}
           </div>
         )}
 

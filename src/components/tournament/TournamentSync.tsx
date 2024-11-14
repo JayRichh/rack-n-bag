@@ -18,8 +18,11 @@ import {
   Loader2,
   AlertCircle,
   X,
-  Signal
+  Signal,
+  GitBranch,
+  RotateCcw
 } from 'lucide-react';
+import { Tournament } from '@/types/tournament';
 
 interface SyncSectionProps {
   title: string;
@@ -66,7 +69,8 @@ function SyncSection({ title, icon: Icon, children, tooltip }: SyncSectionProps)
   );
 }
 
-function ConnectionDetails({ syncState }: { syncState: any }) {
+
+function ConnectionDetails({ syncState, tournament }: { syncState: any; tournament: Tournament }) {
   const getIceStateInfo = () => {
     switch (syncState.iceConnectionState) {
       case 'connected':
@@ -94,8 +98,32 @@ function ConnectionDetails({ syncState }: { syncState: any }) {
     }
   };
 
+  const getTournamentInfo = () => {
+    switch (tournament.phase) {
+      case 'SWISS_SYSTEM':
+        return {
+          color: 'text-blue-500',
+          bg: 'bg-blue-50 dark:bg-blue-900/20',
+          text: `Round ${tournament.progress?.currentRound || 1} of ${tournament.progress?.totalRounds || 1}`
+        };
+      case 'SINGLE_ELIMINATION':
+        return {
+          color: 'text-purple-500',
+          bg: 'bg-purple-50 dark:bg-purple-900/20',
+          text: tournament.progress?.bracketStage || 'Bracket Stage'
+        };
+      default:
+        return {
+          color: 'text-gray-500',
+          bg: 'bg-gray-50 dark:bg-gray-900/20',
+          text: 'Round Robin'
+        };
+    }
+  };
+
   const iceInfo = getIceStateInfo();
   const signalingInfo = getSignalingStateInfo();
+  const tournamentInfo = getTournamentInfo();
 
   return (
     <div className="mt-4 space-y-2 text-sm">
@@ -111,17 +139,15 @@ function ConnectionDetails({ syncState }: { syncState: any }) {
           <span>Signaling: {syncState.signalingState}</span>
         </div>
       )}
-      {syncState.iceGatheringState && (
-        <div className="flex items-center gap-2 px-2 py-1 rounded text-gray-500 bg-gray-50 dark:bg-gray-900/20">
-          <Signal className="w-4 h-4" />
-          <span>Gathering: {syncState.iceGatheringState}</span>
-        </div>
-      )}
+      <div className={`flex items-center gap-2 px-2 py-1 rounded ${tournamentInfo.color} ${tournamentInfo.bg}`}>
+        <Signal className="w-4 h-4" />
+        <span>Tournament: {tournamentInfo.text}</span>
+      </div>
     </div>
   );
 }
 
-export function TournamentSync() {
+export function TournamentSync({ tournament }: { tournament: Tournament }) {
   const { 
     createSyncSession, 
     joinSyncSession,
@@ -192,6 +218,31 @@ export function TournamentSync() {
     }
   };
 
+  const getFormatSpecificInfo = () => {
+    switch (tournament.phase) {
+      case 'SWISS_SYSTEM':
+        return {
+          title: 'Swiss System Tournament',
+          description: 'All participants will receive updates about pairings, Buchholz scores, and round progression.',
+          icon: <Signal className="w-5 h-5" />
+        };
+      case 'SINGLE_ELIMINATION':
+        return {
+          title: 'Single Elimination Tournament',
+          description: 'Updates include bracket progression, consolation matches, and elimination status.',
+          icon: <GitBranch className="w-5 h-5" />
+        };
+      default:
+        return {
+          title: 'Round Robin Tournament',
+          description: 'Match results and standings will be synced in real-time.',
+          icon: <RotateCcw className="w-5 h-5" />
+        };
+    }
+  };
+
+  const formatInfo = getFormatSpecificInfo();
+
   return (
     <div className="py-6">
       {/* Header */}
@@ -200,9 +251,14 @@ export function TournamentSync() {
           <div className="p-2 rounded-lg bg-accent/10">
             <Globe className="w-6 h-6 text-accent" />
           </div>
-          <h2 className={`${typography.h2} text-black/90 dark:text-white/90`}>
-            Real-time Sync
-          </h2>
+          <div>
+            <h2 className={`${typography.h2} text-black/90 dark:text-white/90`}>
+              Real-time Sync
+            </h2>
+            <p className="text-sm text-gray-500">
+              {formatInfo.title}
+            </p>
+          </div>
         </div>
 
         <AnimatePresence mode="wait">
@@ -258,7 +314,7 @@ export function TournamentSync() {
                       )}
                     </p>
                     {(isConnected || syncState.status === 'connecting') && (
-                      <ConnectionDetails syncState={syncState} />
+                      <ConnectionDetails syncState={syncState} tournament={tournament} />
                     )}
                   </div>
                   {!syncState.error && syncState.lastSync && (
@@ -286,6 +342,19 @@ export function TournamentSync() {
             </div>
           </div>
         </SyncSection>
+
+        {/* Format-specific Info */}
+        <div className="p-4 bg-accent/5 rounded-lg border border-accent/20">
+          <div className="flex gap-3">
+            {formatInfo.icon}
+            <div className="space-y-2 text-sm">
+              <p className="font-medium text-accent">{formatInfo.title}</p>
+              <p className="text-gray-600 dark:text-gray-300">
+                {formatInfo.description}
+              </p>
+            </div>
+          </div>
+        </div>
 
         {/* Sync Controls */}
         {syncState.status === 'disconnected' && !syncState.error && (

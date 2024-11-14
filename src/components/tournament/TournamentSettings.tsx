@@ -2,8 +2,8 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { typography } from '../../lib/design-system';
-import { Tournament, ScoringType, Fixture } from '../../types/tournament';
-import { useState, useRef } from 'react';
+import { Tournament, TournamentPhase } from '../../types/tournament';
+import { useState } from 'react';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { 
   Settings,
@@ -18,7 +18,8 @@ import {
   Copy,
   ClipboardPaste,
   X,
-  Check
+  Check,
+  GitBranch
 } from 'lucide-react';
 import { 
   downloadTournamentFile, 
@@ -35,116 +36,35 @@ interface TournamentSettingsProps {
 }
 
 export function TournamentSettings({ tournament, onSave, onClose }: TournamentSettingsProps) {
-  const [pointsConfig, setPointsConfig] = useState(tournament.pointsConfig);
-  const [phase, setPhase] = useState(tournament.phase);
+  const [phase, setPhase] = useState<TournamentPhase>(tournament.phase);
   const [hasChanges, setHasChanges] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhaseChange = (newPhase: TournamentPhase) => {
+    setPhase(newPhase);
+    setHasChanges(true);
+  };
+
+  const handleReset = () => {
+    setPhase('ROUND_ROBIN_SINGLE');
+    setHasChanges(true);
+    setShowResetConfirm(false);
+  };
 
   const handleSave = () => {
-    // Migrate fixture data if scoring type has changed
-    let updatedFixtures = tournament.fixtures;
-    if (pointsConfig.type !== tournament.pointsConfig.type) {
-      updatedFixtures = tournament.fixtures.map(fixture => {
-        if (!fixture.played) return fixture;
-
-        if (pointsConfig.type === 'POINTS') {
-          // Convert from WIN_LOSS to POINTS
-          const newFixture: Fixture = {
-            ...fixture,
-            homeScore: fixture.winner === fixture.homeTeamId ? 1 : 0,
-            awayScore: fixture.winner === fixture.awayTeamId ? 1 : 0,
-            winner: undefined, // Remove winner property for POINTS type
-            datePlayed: fixture.datePlayed,
-            id: fixture.id,
-            homeTeamId: fixture.homeTeamId,
-            awayTeamId: fixture.awayTeamId,
-            played: fixture.played,
-            phase: fixture.phase
-          };
-          return newFixture;
-        } else {
-          // Convert from POINTS to WIN_LOSS
-          const newFixture: Fixture = {
-            ...fixture,
-            winner: fixture.homeScore !== undefined && fixture.awayScore !== undefined
-              ? (fixture.homeScore > fixture.awayScore 
-                ? fixture.homeTeamId 
-                : fixture.awayTeamId)
-              : undefined,
-            homeScore: undefined, // Remove scores for WIN_LOSS type
-            awayScore: undefined,
-            datePlayed: fixture.datePlayed,
-            id: fixture.id,
-            homeTeamId: fixture.homeTeamId,
-            awayTeamId: fixture.awayTeamId,
-            played: fixture.played,
-            phase: fixture.phase
-          };
-          return newFixture;
-        }
-      });
-    }
-
-    // Create updated tournament object with all required properties
     const updatedTournament: Tournament = {
       ...tournament,
-      pointsConfig,
       phase,
-      fixtures: updatedFixtures,
-      dateModified: new Date().toISOString(),
-      teams: tournament.teams.map(team => ({
-        ...team,
-        // Reset stats as they'll be recalculated by the parent
-        played: 0,
-        won: 0,
-        lost: 0,
-        points: 0
-      }))
+      dateModified: new Date().toISOString()
     };
 
     onSave(updatedTournament);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
     setHasChanges(false);
-  };
-
-  const handleScoringTypeChange = (type: ScoringType) => {
-    setPointsConfig(prev => ({
-      ...prev,
-      type,
-      win: type === 'WIN_LOSS' ? 1 : 3,
-      loss: 0,
-      draw: type === 'WIN_LOSS' ? undefined : 1
-    }));
-    setHasChanges(true);
-  };
-
-  const handlePointsChange = (type: 'win' | 'draw' | 'loss', value: number) => {
-    setPointsConfig(prev => ({
-      ...prev,
-      [type]: value
-    }));
-    setHasChanges(true);
-  };
-
-  const handlePhaseChange = (newPhase: Tournament['phase']) => {
-    setPhase(newPhase);
-    setHasChanges(true);
-  };
-
-  const handleReset = () => {
-    setPointsConfig({
-      type: 'WIN_LOSS',
-      win: 1,
-      loss: 0
-    });
-    setPhase('SINGLE');
-    setHasChanges(true);
-    setShowResetConfirm(false);
   };
 
   const handleExport = () => {
@@ -171,34 +91,8 @@ export function TournamentSettings({ tournament, onSave, onClose }: TournamentSe
     }
   };
 
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!validateTournamentFile(file)) {
-      setImportError('Invalid file format. Please select a valid tournament file.');
-      return;
-    }
-
-    try {
-      const importedTournament = await importTournament(file);
-      onSave(importedTournament);
-      setImportError(null);
-    } catch (error) {
-      setImportError('Failed to import tournament. Please check the file and try again.');
-    }
-
-    // Clear the input
-    event.target.value = '';
-  };
-
   return (
     <div className="py-6">
-      {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-accent/10">
@@ -254,178 +148,62 @@ export function TournamentSettings({ tournament, onSave, onClose }: TournamentSe
         </div>
       </div>
 
-      {/* Main Settings */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-        {/* Points System */}
-        <SettingSection 
-          title="Scoring System" 
-          icon={Trophy}
-          tooltip="Configure how match results are tracked and scored"
-        >
-          <div className="space-y-6 bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-            {/* Scoring Type Selection */}
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                Scoring Type
-              </label>
-              <div className="grid grid-cols-2 gap-4">
-                <button
-                  onClick={() => handleScoringTypeChange('WIN_LOSS')}
-                  className={`
-                    p-4 rounded-lg border-2 text-center transition-colors
-                    ${pointsConfig.type === 'WIN_LOSS'
-                      ? 'border-accent bg-accent/10'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-accent/50'
-                    }
-                  `}
-                >
-                  <div className="font-medium">Win/Loss</div>
-                  <div className="text-xs text-gray-500 mt-1">Simple tracking</div>
-                </button>
+      <div className="space-y-8">
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+          <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100 mb-4`}>Tournament Format</h3>
+          
+          <div className="flex flex-col gap-4">
+            <button
+              onClick={() => handlePhaseChange('ROUND_ROBIN_SINGLE')}
+              className={`
+                flex items-center justify-center gap-2 p-4 rounded-lg border-2
+                ${phase === 'ROUND_ROBIN_SINGLE'
+                  ? 'border-accent text-accent bg-accent/5'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-accent/50 hover:text-accent/80'
+                }
+                transition-colors
+              `}
+            >
+              <Calendar className="w-5 h-5" />
+              <span className="font-medium">Round Robin</span>
+            </button>
 
-                <button
-                  onClick={() => handleScoringTypeChange('POINTS')}
-                  className={`
-                    p-4 rounded-lg border-2 text-center transition-colors
-                    ${pointsConfig.type === 'POINTS'
-                      ? 'border-accent bg-accent/10'
-                      : 'border-gray-200 dark:border-gray-700 hover:border-accent/50'
-                    }
-                  `}
-                >
-                  <div className="font-medium">Points Based</div>
-                  <div className="text-xs text-gray-500 mt-1">Custom points</div>
-                </button>
-              </div>
-            </div>
+            <button
+              onClick={() => handlePhaseChange('SWISS_SYSTEM')}
+              className={`
+                flex items-center justify-center gap-2 p-4 rounded-lg border-2
+                ${phase === 'SWISS_SYSTEM'
+                  ? 'border-accent text-accent bg-accent/5'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-accent/50 hover:text-accent/80'
+                }
+                transition-colors
+              `}
+            >
+              <GitBranch className="w-5 h-5" />
+              <span className="font-medium">Swiss System</span>
+            </button>
 
-            {/* Points Configuration */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                  <Check className="w-4 h-4" />
-                  Win Points
-                </label>
-                <input
-                  type="number"
-                  value={pointsConfig.win}
-                  onChange={(e) => handlePointsChange('win', parseInt(e.target.value))}
-                  className="w-24 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-accent/20 focus:border-accent transition-colors"
-                  min="0"
-                />
-              </div>
-
-              {pointsConfig.type === 'POINTS' && (
-                <>
-                  <div className="flex items-center justify-between">
-                    <label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                      <span className="text-lg">•</span>
-                      Draw Points
-                    </label>
-                    <input
-                      type="number"
-                      value={pointsConfig.draw || 0}
-                      onChange={(e) => handlePointsChange('draw', parseInt(e.target.value))}
-                      className="w-24 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-accent/20 focus:border-accent transition-colors"
-                      min="0"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
-                      <X className="w-4 h-4" />
-                      Loss Points
-                    </label>
-                    <input
-                      type="number"
-                      value={pointsConfig.loss}
-                      onChange={(e) => handlePointsChange('loss', parseInt(e.target.value))}
-                      className="w-24 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-accent/20 focus:border-accent transition-colors"
-                      min="0"
-                    />
-                  </div>
-                </>
-              )}
-            </div>
+            <button
+              onClick={() => handlePhaseChange('SINGLE_ELIMINATION')}
+              className={`
+                flex items-center justify-center gap-2 p-4 rounded-lg border-2
+                ${phase === 'SINGLE_ELIMINATION'
+                  ? 'border-accent text-accent bg-accent/5'
+                  : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-accent/50 hover:text-accent/80'
+                }
+                transition-colors
+              `}
+            >
+              <Trophy className="w-5 h-5" />
+              <span className="font-medium">Single Elimination</span>
+            </button>
           </div>
-        </SettingSection>
+        </div>
 
-        {/* Tournament Format */}
-        <SettingSection 
-          title="Tournament Format" 
-          icon={Calendar}
-          tooltip="Choose between single round or home & away matches"
-        >
-          <div className="space-y-4 bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-            <div className="flex gap-4">
-              <button
-                onClick={() => handlePhaseChange('SINGLE')}
-                className={`
-                  flex-1 flex items-center justify-center gap-2 p-4 rounded-lg border-2
-                  ${phase === 'SINGLE'
-                    ? 'border-accent text-accent bg-accent/5'
-                    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-accent/50 hover:text-accent/80'
-                  }
-                  transition-colors
-                `}
-              >
-                <Trophy className="w-5 h-5" />
-                <span className="font-medium">Single Round</span>
-              </button>
-
-              <button
-                onClick={() => handlePhaseChange('HOME_AND_AWAY')}
-                className={`
-                  flex-1 flex items-center justify-center gap-2 p-4 rounded-lg border-2
-                  ${phase === 'HOME_AND_AWAY'
-                    ? 'border-accent text-accent bg-accent/5'
-                    : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-accent/50 hover:text-accent/80'
-                  }
-                  transition-colors
-                `}
-              >
-                <Calendar className="w-5 h-5" />
-                <span className="font-medium">Home & Away</span>
-              </button>
-            </div>
-          </div>
-        </SettingSection>
-      </div>
-
-      {/* Import/Export Section */}
-      <SettingSection
-        title="Share & Backup"
-        icon={Save}
-        tooltip="Share your tournament or create backups"
-      >
-        <div className="space-y-6 bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-          {/* Current Tournament Info */}
-          <div className="p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-200 dark:border-gray-700">
-            <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400 mb-4">
-              Current Tournament
-            </h4>
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Name</span>
-                <span className="font-medium">{tournament.name}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Teams</span>
-                <span className="font-medium">{tournament.teams.length}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Phase</span>
-                <span className="font-medium capitalize">{tournament.phase.toLowerCase().replace('_', ' ')}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Scoring</span>
-                <span className="font-medium">{pointsConfig.type === 'WIN_LOSS' ? 'Win/Loss' : 'Points Based'}</span>
-              </div>
-            </div>
-          </div>
-
+        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+          <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100 mb-4`}>Share & Backup</h3>
+          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Export Options */}
             <div className="space-y-4">
               <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400">
                 Share Tournament Data
@@ -462,7 +240,6 @@ export function TournamentSettings({ tournament, onSave, onClose }: TournamentSe
               </motion.button>
             </div>
 
-            {/* Import Options */}
             <div className="space-y-4">
               <h4 className="text-sm font-medium text-gray-600 dark:text-gray-400">
                 Load Tournament Data
@@ -482,39 +259,15 @@ export function TournamentSettings({ tournament, onSave, onClose }: TournamentSe
                   </div>
                 </div>
               </motion.button>
-
-              <motion.button
-                onClick={handleImportClick}
-                className="w-full flex items-center gap-3 p-4 rounded-lg border-2 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-accent hover:text-accent transition-colors group"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-              >
-                <Upload className="w-5 h-5" />
-                <div className="text-left">
-                  <div className="font-medium group-hover:text-accent">Load from File</div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400">
-                    Import from .json backup
-                  </div>
-                </div>
-              </motion.button>
-
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                onChange={handleFileChange}
-                className="hidden"
-              />
             </div>
           </div>
 
-          {/* Success/Error Messages */}
           <AnimatePresence>
             {importError && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="flex items-center gap-2 p-4 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800"
+                className="flex items-center gap-2 p-4 mt-6 rounded-lg bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800"
               >
                 <AlertTriangle className="w-5 h-5 flex-shrink-0" />
                 <div>
@@ -531,9 +284,8 @@ export function TournamentSettings({ tournament, onSave, onClose }: TournamentSe
             )}
           </AnimatePresence>
         </div>
-      </SettingSection>
+      </div>
 
-      {/* Reset Confirmation Dialog */}
       <AnimatePresence>
         {showResetConfirm && (
           <motion.div
@@ -575,56 +327,6 @@ export function TournamentSettings({ tournament, onSave, onClose }: TournamentSe
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
-  );
-}
-
-function SettingSection({ 
-  title, 
-  icon: Icon, 
-  children, 
-  tooltip,
-  className = ''
-}: { 
-  title: string; 
-  icon: any; 
-  children: React.ReactNode;
-  tooltip?: string;
-  className?: string;
-}) {
-  return (
-    <div className={`space-y-4 ${className}`}>
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-accent/10">
-            <Icon className="w-5 h-5 text-accent" />
-          </div>
-          <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100`}>
-            {title}
-          </h3>
-        </div>
-        {tooltip && (
-          <Tooltip.Provider>
-            <Tooltip.Root>
-              <Tooltip.Trigger asChild>
-                <button className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
-                  <Info className="w-4 h-4" />
-                </button>
-              </Tooltip.Trigger>
-              <Tooltip.Portal>
-                <Tooltip.Content 
-                  className="z-[100] bg-white dark:bg-gray-800 px-4 py-3 rounded-lg shadow-lg text-sm max-w-xs border border-gray-200 dark:border-gray-700"
-                  sideOffset={5}
-                >
-                  {tooltip}
-                  <Tooltip.Arrow className="fill-white dark:fill-gray-800" />
-                </Tooltip.Content>
-              </Tooltip.Portal>
-            </Tooltip.Root>
-          </Tooltip.Provider>
-        )}
-      </div>
-      {children}
     </div>
   );
 }

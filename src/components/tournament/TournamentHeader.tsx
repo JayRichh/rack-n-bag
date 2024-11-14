@@ -3,12 +3,12 @@
 import { motion } from 'framer-motion';
 import { Tournament } from '../../types/tournament';
 import { ParticipantSelector } from '../ParticipantSelector';
-import { Settings, ArrowLeft, Edit, Grid, BarChart2, Table2, Eye, Cog, Globe, Wifi, Crown, Loader2, X, AlertCircle } from 'lucide-react';
+import { Settings, ArrowLeft, Edit, Grid, BarChart2, Table2, Eye, Cog, Globe, Wifi, Crown, Loader2, X, AlertCircle, GitBranch } from 'lucide-react';
 import { typography } from '../../lib/design-system';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { useSyncContext } from '../SyncContext';
 
-export type ViewMode = 'STATS' | 'GRID' | 'TABLE';
+export type ViewMode = 'STATS' | 'GRID' | 'TABLE' | 'BRACKET';
 
 export interface TournamentHeaderProps {
   tournament: Tournament;
@@ -25,6 +25,15 @@ export interface TournamentHeaderProps {
   selectedPlayerId: string;
   onParticipantSelect: (playerId: string) => void;
 }
+
+const getPhaseLabel = (phase: string) => {
+  switch (phase) {
+    case 'ROUND_ROBIN_SINGLE': return 'Round Robin';
+    case 'SWISS_SYSTEM': return 'Swiss';
+    case 'SINGLE_ELIMINATION': return 'Single Elim';
+    default: return phase;
+  }
+};
 
 export function TournamentHeader({
   tournament,
@@ -249,7 +258,7 @@ export function TournamentHeader({
             onClick={onSettingsToggle}
             isActive={showSettings}
             tooltip="Configure tournament rules and scoring"
-            badge={`${tournament.pointsConfig.type === 'POINTS' ? 'Points' : 'Win/Loss'} • ${tournament.phase === 'HOME_AND_AWAY' ? 'H&A' : 'Single'}`}
+            badge={`${tournament.pointsConfig.type === 'POINTS' ? 'Points' : 'Win/Loss'} • ${getPhaseLabel(tournament.phase)}`}
           />
 
           <ActionButton
@@ -281,26 +290,38 @@ export function TournamentHeader({
       </div>
 
       {/* Bottom Bar */}
-      <div className="flex items-center justify-between mt-6"> {/* Removed min-h-full and h-100 */}
-        <div className="flex items-center gap-2 mt-12 -mb-2"> {/* Changed to items-center */}
+      <div className="flex items-center justify-between mt-6">
+        <div className="flex items-center gap-2 mt-12 -mb-2">
           <ViewButton 
             mode="STATS" 
             icon={BarChart2} 
             label="Performance Stats" 
             tooltip="View detailed player performance statistics"
           />
-          <ViewButton 
-            mode="GRID" 
-            icon={Grid} 
-            label="Results Grid" 
-            tooltip="View and update match results in a grid format"
-          />
-          <ViewButton 
-            mode="TABLE" 
-            icon={Table2} 
-            label="Player Rankings" 
-            tooltip="View tournament standings and player rankings"
-          />
+          {tournament.phase !== 'SINGLE_ELIMINATION' && (
+            <>
+              <ViewButton 
+                mode="GRID" 
+                icon={Grid} 
+                label="Results Grid" 
+                tooltip="View and update match results in a grid format"
+              />
+              <ViewButton 
+                mode="TABLE" 
+                icon={Table2} 
+                label="Player Rankings" 
+                tooltip="View tournament standings and player rankings"
+              />
+            </>
+          )}
+          {tournament.phase === 'SINGLE_ELIMINATION' && (
+            <ViewButton 
+              mode="BRACKET" 
+              icon={GitBranch} 
+              label="Tournament Bracket" 
+              tooltip="View and update the elimination bracket"
+            />
+          )}
         </div>
 
         <div className="w-64 mt-4 -mb-2">
@@ -311,6 +332,21 @@ export function TournamentHeader({
           />
         </div>
       </div>
+
+      {/* Tournament Progress */}
+      {tournament.progress && (
+        <div className="absolute left-0 right-0 -bottom-8">
+          <div className="flex items-center justify-center space-x-2 text-sm text-gray-500">
+            <span>Round {tournament.progress.currentRound} of {tournament.progress.totalRounds}</span>
+            {tournament.progress.bracketStage && (
+              <>
+                <span>•</span>
+                <span>{tournament.progress.bracketStage}</span>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

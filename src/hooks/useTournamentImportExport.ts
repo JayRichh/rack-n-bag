@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Tournament, TournamentExport } from '../types/tournament';
+import { Tournament, TournamentPhase, SwissSystemConfig } from '../types/tournament';
 import { storage } from '../utils/storage';
 import { importTournament, importFromClipboard, downloadTournamentFile, copyTournamentToClipboard } from '../utils/importExport';
 import { useToast } from '../components/ToastContext';
@@ -9,18 +9,72 @@ export function useTournamentImportExport() {
   const [isImporting, setIsImporting] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
 
+  const migrateFormatSpecificData = (tournament: Tournament): Tournament => {
+    const migrated = { ...tournament };
+
+    // Ensure proper phase
+    if (!['ROUND_ROBIN_SINGLE', 'SWISS_SYSTEM', 'SINGLE_ELIMINATION'].includes(migrated.phase)) {
+      migrated.phase = 'ROUND_ROBIN_SINGLE';
+    }
+
+    // Ensure Swiss System config if needed
+    if (migrated.phase === 'SWISS_SYSTEM' && !migrated.swissConfig) {
+      const defaultSwissConfig: SwissSystemConfig = {
+        maxRounds: Math.ceil(Math.log2(migrated.teams.length)),
+        byeHandling: 'RANDOM',
+        tiebreakers: ['BUCHHOLZ', 'HEAD_TO_HEAD', 'WINS'],
+        byePoints: migrated.pointsConfig.byePoints || 3
+      };
+      migrated.swissConfig = defaultSwissConfig;
+    }
+
+    // Ensure bye points for points-based scoring
+    if (migrated.pointsConfig.type === 'POINTS' && migrated.pointsConfig.byePoints === undefined) {
+      migrated.pointsConfig.byePoints = 3;
+    }
+
+    // Ensure bracket positions for elimination format
+    if (migrated.phase === 'SINGLE_ELIMINATION') {
+      migrated.teams = migrated.teams.map(team => ({
+        ...team,
+        bracket: team.bracket || 'WINNERS',
+        status: team.status || 'ACTIVE'
+      }));
+      migrated.fixtures = migrated.fixtures.map(fixture => ({
+        ...fixture,
+        bracket: fixture.bracket || 'WINNERS'
+      }));
+    }
+
+    // Ensure progress data
+    if (!migrated.progress) {
+      migrated.progress = {
+        currentRound: 1,
+        totalRounds: migrated.phase === 'ROUND_ROBIN_SINGLE' ? migrated.teams.length - 1 :
+                     migrated.phase === 'SWISS_SYSTEM' ? migrated.swissConfig?.maxRounds || Math.ceil(Math.log2(migrated.teams.length)) :
+                     Math.ceil(Math.log2(migrated.teams.length)),
+        phase: migrated.phase,
+        roundComplete: false,
+        requiresNewPairings: false
+      };
+    }
+
+    return migrated;
+  };
+
   const handleImportedTournament = (importedTournament: Tournament) => {
-    const existingTournament = storage.getTournament(importedTournament.id);
+    const migratedTournament = migrateFormatSpecificData(importedTournament);
+    const existingTournament = storage.getTournament(migratedTournament.id);
     
     if (existingTournament) {
       storage.saveTournament({
-        ...importedTournament,
+        ...migratedTournament,
         dateModified: new Date().toISOString()
       });
-      showToast(`"${importedTournament.name}" has been successfully updated.`, 'success');
+      showToast(`"${migratedTournament.name}" has been successfully updated.`, 'success');
     } else {
-      storage.saveTournament(importedTournament);
-      showToast(`"${importedTournament.name}" has been successfully imported.`, 'success');
+      storage.saveTournament(migratedTournament);
+      showToast(`"${migratedTournament.name}" has been successfully imported.`, 'success');
     }
     
     return storage.getTournaments();

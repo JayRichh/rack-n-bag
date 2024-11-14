@@ -1,92 +1,108 @@
-// Typography scale
 export const typography = {
-  hero: 'text-4xl font-black tracking-tight text-foreground font-display [text-shadow:_0_1px_2px_rgba(0,0,0,0.1)]',
-  h1: 'text-4xl font-bold tracking-tight text-foreground font-display [text-shadow:_0_1px_1px_rgba(0,0,0,0.05)]',
-  h2: 'text-2xl font-semibold tracking-tight text-foreground [text-shadow:_0_1px_1px_rgba(0,0,0,0.05)]',
-  h3: 'text-xl font-medium text-foreground',
-  body: 'text-base leading-relaxed text-foreground/90 font-medium',
-  small: 'text-sm text-muted-foreground',
-  tiny: 'text-xs uppercase tracking-wider text-muted-foreground',
-  subtitle: 'text-lg sm:text-xl font-medium tracking-wide text-foreground/80 [text-shadow:_0_1px_1px_rgba(255,255,255,0.1)]',
+  hero: 'text-4xl font-bold tracking-tight',
+  h1: 'text-3xl font-bold tracking-tight',
+  h2: 'text-2xl font-bold tracking-tight',
+  h3: 'text-xl font-bold tracking-tight',
+  h4: 'text-lg font-bold tracking-tight',
+  body: 'text-base',
+  small: 'text-sm',
+  tiny: 'text-xs',
+  subtitle: 'text-sm text-gray-500 dark:text-gray-400'
 };
 
-// Spacing scale (in rem units, multiply by 4 for pixels)
-export const spacing = {
-  xs: 'space-y-2',  // 8px
-  sm: 'space-y-4',  // 16px
-  md: 'space-y-6',  // 24px
-  lg: 'space-y-8',  // 32px
-  xl: 'space-y-12', // 48px
-};
-
-// Container styles
 export const containers = {
-  card: 'bg-card text-card-foreground rounded-xl shadow-sm hover:shadow-md transition-shadow duration-150 border border-border p-6',
-  section: 'bg-card text-card-foreground rounded-xl shadow-sm p-6 border border-border',
-  grid: 'grid gap-6',
-  content: 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 lg:py-12',
-  wrapper: 'w-full max-w-7xl mx-auto',
-  hero: 'relative backdrop-blur-[2px] rounded-xl bg-gradient-to-b from-background/40 to-transparent p-6',
+  content: 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8',
+  card: 'bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700',
+  wrapper: 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8',
+  section: 'max-w-7xl mx-auto'
 };
 
-// Interactive element styles
 export const interactive = {
   button: {
-    primary: 'inline-flex items-center justify-center px-4 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:bg-primary/90 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 transition-colors duration-150',
-    secondary: 'inline-flex items-center justify-center px-4 py-2 rounded-lg bg-secondary text-secondary-foreground font-medium hover:bg-secondary/90 focus:outline-none focus:ring-2 focus:ring-secondary focus:ring-offset-2 transition-colors duration-150 border border-border',
-    ghost: 'inline-flex items-center justify-center px-4 py-2 rounded-lg text-foreground font-medium hover:bg-muted/10 focus:outline-none focus:ring-2 focus:ring-muted focus:ring-offset-2 transition-colors duration-150',
-    accent: 'inline-flex items-center justify-center px-4 py-2 rounded-lg bg-accent text-accent-foreground font-medium hover:bg-accent/90 focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 transition-colors duration-150',
-  },
-  input: 'w-full rounded-lg border border-border/30 dark:border-border/50 bg-background dark:bg-surface-dark text-text-primary-light dark:text-text-primary-dark placeholder-text-secondary-light/50 dark:placeholder-text-secondary-dark/50 focus:border-primary-400 dark:focus:border-primary-300 focus:ring-2 focus:ring-primary-400/20 dark:focus:ring-primary-300/20 transition-colors duration-150 px-4 py-2 font-medium',
-  select: 'w-full rounded-lg border border-border/30 dark:border-border/50 bg-background dark:bg-surface-dark text-text-primary-light dark:text-text-primary-dark focus:border-primary-400 dark:focus:border-primary-300 focus:ring-2 focus:ring-primary-400/20 dark:focus:ring-primary-300/20 transition-colors duration-150 px-4 py-2 font-medium',
+    accent: 'inline-flex items-center px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent/90 transition-colors',
+    ghost: 'inline-flex items-center px-4 py-2 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors',
+    danger: 'inline-flex items-center px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors'
+  }
 };
 
-// Status and state colors
 export const status = {
   success: {
     text: 'text-emerald-600 dark:text-emerald-400',
-    bg: 'bg-emerald-50 dark:bg-emerald-950/50',
-    border: 'border-emerald-200 dark:border-emerald-800',
-  },
-  warning: {
-    text: 'text-amber-600 dark:text-amber-400',
-    bg: 'bg-amber-50 dark:bg-amber-950/50',
-    border: 'border-amber-200 dark:border-amber-800',
+    bg: 'bg-emerald-50 dark:bg-emerald-900/20',
+    border: 'border-emerald-200 dark:border-emerald-800'
   },
   error: {
-    text: 'text-accent dark:text-accent',
-    bg: 'bg-accent/10 dark:bg-accent/20',
-    border: 'border-accent/20 dark:border-accent/30',
+    text: 'text-red-600 dark:text-red-400',
+    bg: 'bg-red-50 dark:bg-red-900/20',
+    border: 'border-red-200 dark:border-red-800'
+  },
+  warning: {
+    text: 'text-yellow-600 dark:text-yellow-400',
+    bg: 'bg-yellow-50 dark:bg-yellow-900/20',
+    border: 'border-yellow-200 dark:border-yellow-800'
   },
   info: {
-    text: 'text-primary dark:text-primary',
-    bg: 'bg-primary/10 dark:bg-primary/20',
-    border: 'border-primary/20 dark:border-primary/30',
+    text: 'text-blue-600 dark:text-blue-400',
+    bg: 'bg-blue-50 dark:bg-blue-900/20',
+    border: 'border-blue-200 dark:border-blue-800'
   },
+  accent: {
+    text: 'text-accent',
+    bg: 'bg-accent/10',
+    border: 'border-accent/20'
+  }
 };
 
-// Layout utilities
+export const spacing = {
+  section: 'space-y-8',
+  subsection: 'space-y-4',
+  stack: 'space-y-2',
+  inline: 'space-x-2',
+  sm: 'space-y-2',
+  md: 'space-y-4',
+  lg: 'space-y-8',
+  xl: 'space-y-12'
+};
+
 export const layout = {
-  maxWidth: 'max-w-7xl mx-auto',
-  contentPadding: 'px-4 sm:px-6 lg:px-8 py-6 sm:py-8',
-  sectionSpacing: 'py-8 sm:py-12',
-  pageWrapper: 'min-h-screen bg-background text-foreground',
+  grid: {
+    base: 'grid gap-4',
+    cols2: 'grid-cols-1 sm:grid-cols-2',
+    cols3: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3',
+    cols4: 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+  },
+  flex: {
+    center: 'flex items-center justify-center',
+    between: 'flex items-center justify-between',
+    start: 'flex items-center justify-start',
+    end: 'flex items-center justify-end',
+    col: 'flex flex-col'
+  },
+  maxWidth: {
+    sm: 'max-w-sm',
+    md: 'max-w-md',
+    lg: 'max-w-lg',
+    xl: 'max-w-xl',
+    '2xl': 'max-w-2xl',
+    '3xl': 'max-w-3xl',
+    '4xl': 'max-w-4xl',
+    '5xl': 'max-w-5xl',
+    '6xl': 'max-w-6xl',
+    '7xl': 'max-w-7xl'
+  },
+  contentPadding: {
+    sm: 'px-4 py-2',
+    md: 'px-6 py-4',
+    lg: 'px-8 py-6',
+    xl: 'px-12 py-8'
+  },
+  sectionSpacing: 'py-12 space-y-12'
 };
 
-// Table styles
-export const table = {
-  container: 'overflow-x-auto rounded-xl border border-border',
-  wrapper: 'min-w-full',
-  header: 'bg-muted/10 dark:bg-muted/5',
-  headerCell: 'px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider',
-  row: 'hover:bg-muted/5 dark:hover:bg-muted/10 transition-colors duration-150',
-  cell: 'px-6 py-4 whitespace-nowrap text-sm text-foreground',
-  footer: 'bg-muted/10 dark:bg-muted/5',
-};
-
-// Animation utilities
-export const animation = {
-  fadeIn: 'animate-fadeIn',
-  slideIn: 'animate-slideIn',
-  pulse: 'animate-pulse',
+export const forms = {
+  input: 'w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-accent focus:border-transparent',
+  select: 'w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 focus:ring-2 focus:ring-accent focus:border-transparent',
+  checkbox: 'rounded border-gray-300 text-accent focus:ring-accent',
+  radio: 'rounded-full border-gray-300 text-accent focus:ring-accent',
+  label: 'block text-sm font-medium text-gray-700 dark:text-gray-300'
 };

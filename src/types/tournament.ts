@@ -1,37 +1,58 @@
-export type TournamentPhase = 'SINGLE' | 'HOME_AND_AWAY';
-
-export type TeamStatus = 'ACTIVE' | 'WITHDRAWN';
-
-export type ScoringType = 'WIN_LOSS' | 'POINTS';
+export type TournamentPhase = 'ROUND_ROBIN_SINGLE' | 'SWISS_SYSTEM' | 'SINGLE_ELIMINATION';
+export type TeamStatus = 'ACTIVE' | 'ELIMINATED';
+export type BracketPosition = 'WINNERS' | 'CONSOLATION';
+export type ScoringType = 'POINTS' | 'WIN_LOSS';
+export type SwissTiebreaker = 'BUCHHOLZ' | 'HEAD_TO_HEAD' | 'WINS';
 
 export interface Team {
   id: string;
   name: string;
   status: TeamStatus;
   played: number;
-  won: number;
-  lost: number;
+  wins: number;
+  losses: number;
   points: number;
+  seed?: number;
+  buchholzScore?: number;
+  bracket?: BracketPosition;
 }
 
 export interface PointsConfig {
-  type: ScoringType;     // Whether to use simple win/loss or point-based scoring
-  win: number;           // Points for win (typically 1 for WIN_LOSS, 2/3 for POINTS)
-  loss: number;          // Points for loss (typically 0)
-  draw?: number;         // Optional points for draw
+  type: ScoringType;
+  win: number;
+  loss: number;
+  draw?: number;
+  byePoints?: number;
+}
+
+export interface SwissSystemConfig {
+  maxRounds: number;
+  byeHandling: 'RANDOM' | 'LOWEST_RANKED';
+  tiebreakers: SwissTiebreaker[];
+  byePoints: number;
 }
 
 export interface Fixture {
-  datePlayed: string | number | Date;
   id: string;
   homeTeamId: string;
   awayTeamId: string;
-  homeScore?: number;    // Optional for point-based games
-  awayScore?: number;    // Optional for point-based games
-  winner?: string;       // Team ID of winner for WIN_LOSS games
   played: boolean;
-  date?: string;         // ISO date string
-  phase: 'HOME' | 'AWAY';
+  round: number;
+  datePlayed: string;
+  homeScore?: number;
+  awayScore?: number;
+  winner?: string;
+  bracket?: BracketPosition;
+  significance?: string;
+}
+
+export interface TournamentProgress {
+  currentRound: number;
+  totalRounds: number;
+  phase: TournamentPhase;
+  roundComplete: boolean;
+  requiresNewPairings: boolean;
+  bracketStage?: string;
 }
 
 export interface Tournament {
@@ -41,17 +62,42 @@ export interface Tournament {
   teams: Team[];
   fixtures: Fixture[];
   pointsConfig: PointsConfig;
-  dateCreated: string;    // ISO date string
-  dateModified: string;   // ISO date string
+  swissConfig?: SwissSystemConfig;
+  seedMethod?: 'RANDOM' | 'MANUAL' | 'RANKING';
+  dateCreated: string;
+  dateModified: string;
+  progress: TournamentProgress;
 }
 
+// Import/Export Types
 export interface TournamentExport {
-  version: number;        // For future compatibility
+  version: number;
   type: 'tournament_export';
-  timestamp: string;      // ISO date string
+  timestamp: string;
   data: Tournament;
 }
 
-export interface ImportError extends Error {
+export interface ImportError {
   code: string;
+  message: string;
+}
+
+// Tournament System Types
+export interface SwissRound {
+  round: number;
+  fixtures: Fixture[];
+  complete: boolean;
+}
+
+export interface BracketNode {
+  fixture?: Fixture;
+  round: number;
+  position: number;
+  nextPosition?: number;
+  bracket: BracketPosition;
+}
+
+export interface TournamentSystemError {
+  code: string;
+  message: string;
 }

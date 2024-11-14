@@ -17,7 +17,33 @@ interface ImportModalProps {
   onImportClipboard: () => void;
   isLoading?: boolean;
 }
+const getFormatLabel = (tournament: Tournament) => {
+  switch (tournament.phase) {
+    case 'ROUND_ROBIN_SINGLE':
+      return 'Single Round-Robin';
+    case 'SWISS_SYSTEM':
+      return 'Swiss System';
+    case 'SINGLE_ELIMINATION':
+      return 'Single Elimination';
+    default:
+      return tournament.phase;
+  }
+};
 
+const getFormatDescription = (tournament: Tournament) => {
+  const scoringType = tournament.pointsConfig.type === 'POINTS' ? 'Points Based' : 'Win/Loss';
+  
+  switch (tournament.phase) {
+    case 'ROUND_ROBIN_SINGLE':
+      return `${scoringType} • Single Round`;
+    case 'SWISS_SYSTEM':
+      return `${scoringType} • Swiss Format`;
+    case 'SINGLE_ELIMINATION':
+      return `${scoringType} • Bracket`;
+    default:
+      return scoringType;
+  }
+};
 function ImportModal({ isOpen, onClose, onImportFile, onImportClipboard, isLoading }: ImportModalProps) {
   if (!isOpen) return null;
 
@@ -177,6 +203,17 @@ const TournamentCard = forwardRef<HTMLDivElement, { tournament: Tournament; onDe
       setShowDeleteConfirm(false);
     };
 
+
+    function getParticipantLabel(length: number): React.ReactNode {
+      return `${length} ${length === 1 ? 'team' : 'teams'}`;
+    }
+
+    function getProgressLabel(tournament: Tournament): React.ReactNode {
+      const completedMatches = tournament.fixtures.filter(f => f.played).length;
+      const totalMatches = tournament.fixtures.length;
+      return `${completedMatches} of ${totalMatches} matches completed`;
+    }
+
     return (
       <>
         <motion.div
@@ -195,17 +232,22 @@ const TournamentCard = forwardRef<HTMLDivElement, { tournament: Tournament; onDe
                 {tournament.name}
               </h3>
               <div className={`${status.info.bg} ${status.info.text} px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap`}>
-                {tournament.teams.length} Teams
+                {getParticipantLabel(tournament.teams.length)}
               </div>
             </div>
 
-            <div className={`${status.success.bg} ${status.success.text} w-fit px-3 py-1 rounded-full text-xs font-medium`}>
-              {tournament.phase === 'SINGLE' ? 'Single Round' : 'Home & Away'}
+            <div className="flex flex-wrap gap-2">
+              <div className={`${status.success.bg} ${status.success.text} px-3 py-1 rounded-full text-xs font-medium`}>
+                {getFormatLabel(tournament)}
+              </div>
+              <div className={`${status.info.bg} ${status.info.text} px-3 py-1 rounded-full text-xs font-medium`}>
+                {getFormatDescription(tournament)}
+              </div>
             </div>
 
             <div className="space-y-2">
               <div className="flex justify-between items-center text-sm font-medium">
-                <span>Progress</span>
+                <span>{getProgressLabel(tournament)}</span>
                 <span>{Math.round(progress)}%</span>
               </div>
               <div className="relative h-2 bg-muted/20 rounded-full overflow-hidden">
