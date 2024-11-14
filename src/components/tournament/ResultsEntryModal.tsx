@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Modal } from '../Modal';
-import { Team, Fixture, Tournament, ScoringType } from '../../types/tournament';
+import { Team, Fixture, Tournament } from '../../types/tournament';
 import { Info } from 'lucide-react';
 import * as Tooltip from '@radix-ui/react-tooltip';
 
@@ -70,12 +70,12 @@ export function ResultsEntryModal({
       onClose={onClose}
       title="Enter Match Result"
     >
-      <div className="space-y-6">
+      <div className="space-y-6 w-full">
         {/* Info Panel */}
         <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-sm space-y-2">
           <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300 font-medium">
-            <Info className="w-4 h-4" />
-            Scoring System
+            <Info className="w-4 h-4 flex-shrink-0" />
+            <span className="flex-1">Scoring System</span>
           </div>
           <ul className="list-disc list-inside text-gray-600 dark:text-gray-400 space-y-1">
             <li>Winner gets {tournament.pointsConfig.win} tournament points</li>
@@ -90,7 +90,7 @@ export function ResultsEntryModal({
           // Points-based scoring UI
           <div className="grid grid-cols-3 gap-4 items-center">
             <div className="text-center">
-              <div className="font-medium mb-2">{homeTeam.name}</div>
+              <div className="font-medium mb-2 truncate">{homeTeam.name}</div>
               <Tooltip.Provider>
                 <Tooltip.Root>
                   <Tooltip.Trigger asChild>
@@ -107,7 +107,7 @@ export function ResultsEntryModal({
                   </Tooltip.Trigger>
                   <Tooltip.Portal>
                     <Tooltip.Content
-                      className="bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm"
+                      className="z-[100] bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm"
                       sideOffset={5}
                     >
                       Enter points scored
@@ -122,7 +122,7 @@ export function ResultsEntryModal({
             </div>
 
             <div className="text-center">
-              <div className="font-medium mb-2">{awayTeam.name}</div>
+              <div className="font-medium mb-2 truncate">{awayTeam.name}</div>
               <Tooltip.Provider>
                 <Tooltip.Root>
                   <Tooltip.Trigger asChild>
@@ -139,7 +139,7 @@ export function ResultsEntryModal({
                   </Tooltip.Trigger>
                   <Tooltip.Portal>
                     <Tooltip.Content
-                      className="bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm"
+                      className="z-[100] bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm"
                       sideOffset={5}
                     >
                       Enter points scored
@@ -153,6 +153,7 @@ export function ResultsEntryModal({
           // Win/Loss scoring UI
           <div className="grid grid-cols-2 gap-4">
             <button
+              type="button"
               onClick={() => handleWinnerSelect(homeTeam.id)}
               className={`p-4 rounded-lg border-2 text-center transition-colors
                 ${winner === homeTeam.id 
@@ -161,11 +162,12 @@ export function ResultsEntryModal({
                 }
               `}
             >
-              <div className="font-medium">{homeTeam.name}</div>
+              <div className="font-medium truncate">{homeTeam.name}</div>
               <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Winner</div>
             </button>
 
             <button
+              type="button"
               onClick={() => handleWinnerSelect(awayTeam.id)}
               className={`p-4 rounded-lg border-2 text-center transition-colors
                 ${winner === awayTeam.id 
@@ -174,7 +176,7 @@ export function ResultsEntryModal({
                 }
               `}
             >
-              <div className="font-medium">{awayTeam.name}</div>
+              <div className="font-medium truncate">{awayTeam.name}</div>
               <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">Winner</div>
             </button>
           </div>
@@ -182,19 +184,21 @@ export function ResultsEntryModal({
 
         {/* Error Message */}
         {error && (
-          <div className="text-center text-sm text-red-500">
+          <div className="text-center text-sm text-red-500 min-h-[1.25rem]">
             {error}
           </div>
         )}
 
         <div className="flex justify-end gap-3">
           <button
+            type="button"
             onClick={onClose}
             className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={handleSave}
             className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={!!error || (!isPointBased && !winner)}
