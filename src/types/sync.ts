@@ -13,6 +13,14 @@ export interface SyncSession {
   lastActive: string;
   messages: SignalingMessage[];
   connectedPeers: string[];
+  // Add host status tracking
+  hostStatus: 'active' | 'inactive';
+  // Add session metadata
+  metadata: {
+    version: number;
+    created: string;
+    lastHostPing: string;
+  };
 }
 
 export interface SyncState {
@@ -24,6 +32,13 @@ export interface SyncState {
   iceGatheringState?: RTCIceGatheringState;
   iceConnectionState?: RTCIceConnectionState;
   signalingState?: RTCSignalingState;
+  // Add connection metadata
+  metadata?: {
+    sessionId: string;
+    peerId: string;
+    role: 'host' | 'peer';
+    lastActive: string;
+  };
 }
 
 export interface SyncMessage {
@@ -90,18 +105,27 @@ export const DEFAULT_CHANNEL_CONFIG: DataChannelConfig = {
 export const SYNC_VERSION = 1;
 
 // Timeouts and intervals (in milliseconds)
-export const CONNECTION_TIMEOUT = 120000;       // 2 minutes (increased for more reliable connections)
+export const CONNECTION_TIMEOUT = 30000;        // 30 seconds
 export const SIGNALING_CHECK_INTERVAL = 1000;   // 1 second
-export const PING_INTERVAL = 15000;             // 15 seconds
-export const HEALTH_CHECK_INTERVAL = 5000;      // 5 seconds
-export const SESSION_CLEANUP_INTERVAL = 300000;  // 5 minutes (increased to reduce cleanup frequency)
-export const SESSION_EXPIRY = 30 * 60 * 1000;   // 30 minutes (increased for longer sessions)
-export const MESSAGE_EXPIRY = 5 * 60 * 1000;    // 5 minutes (increased for more reliable signaling)
-export const RECONNECT_DELAY = 2000;            // 2 seconds
-export const MAX_RECONNECT_ATTEMPTS = 5;        // Increased maximum reconnection attempts
+export const PING_INTERVAL = 5000;             // 5 seconds
+export const HEALTH_CHECK_INTERVAL = 2000;      // 2 seconds
+export const SESSION_CLEANUP_INTERVAL = 60000;  // 1 minute
+export const SESSION_EXPIRY = 5 * 60 * 1000;   // 5 minutes
+export const MESSAGE_EXPIRY = 30000;           // 30 seconds
+export const RECONNECT_DELAY = 2000;           // 2 seconds
+export const MAX_RECONNECT_ATTEMPTS = 3;       // Maximum number of reconnection attempts
+export const HOST_PING_INTERVAL = 10000;       // 10 seconds
+export const HOST_TIMEOUT = 30000;             // 30 seconds without ping = inactive host
 
 // WebRTC configuration constants
-export const MAX_MESSAGE_SIZE = 16384;          // 16KB max message size
-export const ICE_GATHERING_TIMEOUT = 10000;     // 10 seconds timeout for ICE gathering (increased)
-export const SIGNALING_TIMEOUT = 20000;         // 20 seconds timeout for signaling (increased)
-export const MAX_BUFFERED_MESSAGES = 100;       // Maximum number of messages to buffer
+export const MAX_MESSAGE_SIZE = 16384;         // 16KB max message size
+export const ICE_GATHERING_TIMEOUT = 8000;     // 8 seconds timeout for ICE gathering
+export const SIGNALING_TIMEOUT = 15000;        // 15 seconds timeout for signaling
+export const MAX_BUFFERED_MESSAGES = 100;      // Maximum number of messages to buffer
+
+// Local storage keys
+export const SYNC_STORAGE_KEYS = {
+  SESSIONS: 'tournament_sync_sessions',
+  STATE: 'tournament_sync_state',
+  PEER_ID: 'tournament_sync_peer_id'
+} as const;

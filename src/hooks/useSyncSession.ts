@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { RTCManager } from '../utils/rtc-manager';
 import { syncStorage } from '../utils/sync-storage';
-import { SyncState } from '../types/sync';
+import { SyncState, SYNC_VERSION, SYNC_STORAGE_KEYS } from '../types/sync';
 
 const RECONNECT_DELAYS = [2000, 5000, 10000, 30000]; // Increasing backoff delays
 
@@ -22,6 +22,18 @@ export function useSyncSession({
   const [isHost, setIsHost] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [reconnectTimeout, setReconnectTimeout] = useState<NodeJS.Timeout | null>(null);
+
+  // Get or generate persistent peer ID
+  const getPeerId = useCallback(() => {
+    if (typeof window === 'undefined') return '';
+
+    let peerId = localStorage.getItem(SYNC_STORAGE_KEYS.PEER_ID);
+    if (!peerId) {
+      peerId = `peer-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      localStorage.setItem(SYNC_STORAGE_KEYS.PEER_ID, peerId);
+    }
+    return peerId;
+  }, []);
 
   const cleanup = useCallback(async () => {
     if (reconnectTimeout) {
@@ -50,7 +62,13 @@ export function useSyncSession({
     const newState: SyncState = {
       status,
       connectedPeers: 0,
-      ...updates
+      ...updates,
+      metadata: {
+        sessionId: tournamentId,
+        peerId: getPeerId(),
+        role: isHost ? 'host' : 'peer',
+        lastActive: new Date().toISOString()
+      }
     };
 
     if (error) {
@@ -90,10 +108,11 @@ export function useSyncSession({
     const session = syncStorage.getSession(tournamentId);
     if (session) {
       newState.connectedPeers = session.connectedPeers.length;
+      newState.hostId = session.hostId;
     }
 
     onStateChange?.(newState);
-  }, [tournamentId, reconnectAttempt, isHost, reconnectTimeout, onStateChange, onError]);
+  }, [tournamentId, reconnectAttempt, isHost, reconnectTimeout, onStateChange, onError, getPeerId]);
 
   const createSession = useCallback(async () => {
     if (!tournamentId) return;
@@ -101,19 +120,9 @@ export function useSyncSession({
     try {
       await cleanup();
 
-      // Create session in storage
-      const session = {
-        id: tournamentId,
-        tournamentId,
-        hostId: tournamentId,
-        lastActive: new Date().toISOString(),
-        messages: [],
-        connectedPeers: []
-      };
-      syncStorage.createSession(session);
-
       // Create RTC manager
-      const manager = new RTCManager(tournamentId, tournamentId, true);
+      const peerId = getPeerId();
+      const manager = new RTCManager(tournamentId, peerId, true);
       setRtcManager(manager);
       setIsHost(true);
 
@@ -123,14 +132,13 @@ export function useSyncSession({
 
       // Start connection
       await manager.connect();
-      syncStorage.addConnectedPeer(tournamentId, tournamentId);
 
       return manager;
     } catch (error) {
       console.error('Failed to create sync session:', error);
       throw error;
     }
-  }, [tournamentId, cleanup, handleStateChange, onMessage]);
+  }, [tournamentId, cleanup, handleStateChange, onMessage, getPeerId]);
 
   const joinSession = useCallback(async () => {
     if (!tournamentId) return;
@@ -140,13 +148,12 @@ export function useSyncSession({
 
       // Get existing session
       const session = syncStorage.getSession(tournamentId);
-      if (!session?.hostId) {
+      if (!session?.hostId || session.hostStatus !== 'active') {
         throw new Error('No active host session found');
       }
 
-      const peerId = `peer-${Date.now()}`;
-
       // Create RTC manager
+      const peerId = getPeerId();
       const manager = new RTCManager(tournamentId, peerId, false);
       setRtcManager(manager);
       setIsHost(false);
@@ -157,14 +164,13 @@ export function useSyncSession({
 
       // Start connection
       await manager.connect();
-      syncStorage.addConnectedPeer(tournamentId, peerId);
 
       return manager;
     } catch (error) {
       console.error('Failed to join sync session:', error);
       throw error;
     }
-  }, [tournamentId, cleanup, handleStateChange, onMessage]);
+  }, [tournamentId, cleanup, handleStateChange, onMessage, getPeerId]);
 
   const sendMessage = useCallback((message: any) => {
     if (!rtcManager) return;

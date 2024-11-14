@@ -1,6 +1,13 @@
-import { SyncSession, SignalingMessage, SESSION_CLEANUP_INTERVAL, SESSION_EXPIRY, MESSAGE_EXPIRY } from '../types/sync';
-
-const SYNC_SESSION_KEY = 'tournament_sync_sessions';
+import { 
+  SyncSession, 
+  SignalingMessage, 
+  SESSION_CLEANUP_INTERVAL, 
+  SESSION_EXPIRY, 
+  MESSAGE_EXPIRY,
+  HOST_TIMEOUT,
+  SYNC_STORAGE_KEYS,
+  SYNC_VERSION
+} from '../types/sync';
 
 class SyncStorage {
   private cleanupInterval: NodeJS.Timeout | null = null;
@@ -13,7 +20,6 @@ class SyncStorage {
   }
 
   private cleanupExpiredSessions = () => {
-    // Prevent multiple cleanups from running simultaneously
     if (Date.now() - this.lastCleanup < SESSION_CLEANUP_INTERVAL) {
       return;
     }
@@ -24,12 +30,17 @@ class SyncStorage {
       let hasChanges = false;
 
       Object.entries(sessions).forEach(([id, session]) => {
-        // Keep messages for active sessions longer
-        const messageExpiry = session.connectedPeers.length > 0 ? 
-          MESSAGE_EXPIRY * 2 : // Double expiry time for active sessions
-          MESSAGE_EXPIRY;
+        // Check host status
+        const hostLastPing = new Date(session.metadata.lastHostPing).getTime();
+        const isHostActive = Date.now() - hostLastPing < HOST_TIMEOUT;
+        
+        if (session.hostStatus === 'active' && !isHostActive) {
+          session.hostStatus = 'inactive';
+          hasChanges = true;
+        }
 
-        // Only clean up messages that are definitely expired
+        // Clean up messages based on session activity
+        const messageExpiry = session.hostStatus === 'active' ? MESSAGE_EXPIRY * 2 : MESSAGE_EXPIRY;
         session.messages = session.messages.filter(msg => {
           const messageAge = Date.now() - new Date(msg.timestamp).getTime();
           return messageAge < messageExpiry;
@@ -38,15 +49,17 @@ class SyncStorage {
         // Only remove sessions that are:
         // 1. Inactive for longer than SESSION_EXPIRY
         // 2. Have no connected peers
-        // 3. Have no pending messages
+        // 3. Host is inactive
+        // 4. Have no pending messages
         const sessionAge = Date.now() - new Date(session.lastActive).getTime();
         if (sessionAge > SESSION_EXPIRY && 
             session.connectedPeers.length === 0 &&
+            session.hostStatus === 'inactive' &&
             session.messages.length === 0) {
           delete sessions[id];
           hasChanges = true;
-        } else if (session.messages.length !== sessions[id].messages.length) {
-          // Update session if we cleaned up any messages
+        } else if (session !== sessions[id]) {
+          // Update session if it was modified
           sessions[id] = session;
           hasChanges = true;
         }
@@ -62,7 +75,7 @@ class SyncStorage {
 
   private getSessions(): Record<string, SyncSession> {
     try {
-      const sessionsJson = localStorage.getItem(SYNC_SESSION_KEY);
+      const sessionsJson = localStorage.getItem(SYNC_STORAGE_KEYS.SESSIONS);
       return sessionsJson ? JSON.parse(sessionsJson) : {};
     } catch (error) {
       console.error('Failed to get sync sessions:', error);
@@ -72,7 +85,7 @@ class SyncStorage {
 
   private saveSessions(sessions: Record<string, SyncSession>): void {
     try {
-      localStorage.setItem(SYNC_SESSION_KEY, JSON.stringify(sessions));
+      localStorage.setItem(SYNC_STORAGE_KEYS.SESSIONS, JSON.stringify(sessions));
     } catch (error) {
       console.error('Failed to save sync sessions:', error);
     }
@@ -80,7 +93,21 @@ class SyncStorage {
 
   getSession(tournamentId: string): SyncSession | undefined {
     const sessions = this.getSessions();
-    return sessions[tournamentId];
+    const session = sessions[tournamentId];
+    
+    // Verify session is valid and host is active
+    if (session) {
+      const hostLastPing = new Date(session.metadata.lastHostPing).getTime();
+      const isHostActive = Date.now() - hostLastPing < HOST_TIMEOUT;
+      
+      if (!isHostActive) {
+        session.hostStatus = 'inactive';
+        sessions[tournamentId] = session;
+        this.saveSessions(sessions);
+      }
+    }
+    
+    return session;
   }
 
   createSession(session: SyncSession): void {
@@ -93,7 +120,12 @@ class SyncStorage {
       ...session,
       messages: existingSession?.messages || [],
       connectedPeers: existingSession?.connectedPeers || [],
-      lastActive: new Date().toISOString()
+      lastActive: new Date().toISOString(),
+      hostStatus: 'active',
+      metadata: {
+        ...session.metadata,
+        lastHostPing: new Date().toISOString()
+      }
     };
     
     this.saveSessions(sessions);
@@ -127,13 +159,11 @@ class SyncStorage {
         );
       }
       
-      // Keep all recent ICE candidates
+      // Keep messages based on session activity
+      const messageExpiry = session.hostStatus === 'active' ? MESSAGE_EXPIRY * 2 : MESSAGE_EXPIRY;
       const recentMessages = filteredMessages.filter(msg => {
         const messageAge = Date.now() - new Date(msg.timestamp).getTime();
-        // Keep messages longer if there are connected peers
-        const expiry = session.connectedPeers.length > 0 ? 
-          MESSAGE_EXPIRY * 2 : MESSAGE_EXPIRY;
-        return messageAge < expiry;
+        return messageAge < messageExpiry;
       });
       
       sessions[tournamentId] = {
@@ -148,11 +178,11 @@ class SyncStorage {
 
   getSignalingMessages(tournamentId: string, receiverId: string): SignalingMessage[] {
     const session = this.getSession(tournamentId);
-    if (!session) return [];
+    if (!session || session.hostStatus !== 'active') return [];
 
     // Get messages intended for this receiver or broadcast messages
     // Sort by timestamp to ensure proper message ordering
-    // Process offers before ICE candidates
+    // Process offers and answers before ICE candidates
     return session.messages
       .filter(msg => !msg.receiverId || msg.receiverId === receiverId)
       .sort((a, b) => {

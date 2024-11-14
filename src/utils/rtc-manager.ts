@@ -3,12 +3,14 @@ import {
   SignalingMessage, 
   SyncMessage, 
   SyncState,
+  SyncSession,
   DEFAULT_RTC_CONFIG,
   DEFAULT_CHANNEL_CONFIG,
   SYNC_VERSION,
   CONNECTION_TIMEOUT,
   SIGNALING_CHECK_INTERVAL,
-  ICE_GATHERING_TIMEOUT
+  ICE_GATHERING_TIMEOUT,
+  HOST_PING_INTERVAL
 } from '../types/sync';
 
 type ConnectionState = SyncState['status'];
@@ -23,6 +25,7 @@ export class RTCManager {
   private stateCallback: ((state: ConnectionState, error?: string, updates?: Partial<SyncState>) => void) | null = null;
   private connectionTimeout: NodeJS.Timeout | null = null;
   private signallingCheckInterval: NodeJS.Timeout | null = null;
+  private hostPingInterval: NodeJS.Timeout | null = null;
   private isClosing = false;
   private pendingCandidates: RTCIceCandidate[] = [];
   private hasRemoteDescription = false;
@@ -37,11 +40,9 @@ export class RTCManager {
     this.tournamentId = tournamentId;
     this.peerId = peerId;
     this.isHost = isHost;
-    // Host is always polite to handle offer collisions gracefully
     this.polite = isHost;
   }
 
-  // Make getConnectionState public
   public getConnectionState(): ConnectionState {
     if (this.dataChannel?.readyState === 'open') {
       return this.isHost ? 'host' : 'connected';
@@ -54,7 +55,29 @@ export class RTCManager {
     return 'disconnected';
   }
 
+  private startHostPing() {
+    if (!this.isHost) return;
+
+    this.hostPingInterval = setInterval(() => {
+      const session = syncStorage.getSession(this.tournamentId);
+      if (session) {
+        syncStorage.updateSession(this.tournamentId, {
+          ...session,
+          hostStatus: 'active',
+          metadata: {
+            ...session.metadata,
+            lastHostPing: new Date().toISOString()
+          }
+        });
+      }
+    }, HOST_PING_INTERVAL);
+  }
+
   private setupPeerConnection() {
+    if (this.peerConnection) {
+      this.peerConnection.close();
+    }
+
     this.peerConnection = new RTCPeerConnection({
       ...DEFAULT_RTC_CONFIG,
       iceTransportPolicy: 'all',
@@ -189,6 +212,7 @@ export class RTCManager {
       
       if (this.isHost) {
         syncStorage.addConnectedPeer(this.tournamentId, this.peerId);
+        this.startHostPing();
       }
     };
 
@@ -259,7 +283,7 @@ export class RTCManager {
   private startSignallingCheck() {
     this.signallingCheckInterval = setInterval(async () => {
       if (this.pendingSignalingPromise) {
-        return; // Wait for previous signaling operation to complete
+        return;
       }
 
       try {
@@ -369,14 +393,21 @@ export class RTCManager {
 
       if (this.isHost) {
         // Create and store the sync session
-        syncStorage.createSession({
+        const session: SyncSession = {
           id: this.peerId,
           tournamentId: this.tournamentId,
           hostId: this.peerId,
           lastActive: new Date().toISOString(),
           messages: [],
-          connectedPeers: []
-        });
+          connectedPeers: [],
+          hostStatus: 'active',
+          metadata: {
+            version: SYNC_VERSION,
+            created: new Date().toISOString(),
+            lastHostPing: new Date().toISOString()
+          }
+        };
+        syncStorage.createSession(session);
       }
     } catch (error) {
       console.error('Connection setup failed:', error);
@@ -390,6 +421,11 @@ export class RTCManager {
     if (this.signallingCheckInterval) {
       clearInterval(this.signallingCheckInterval);
       this.signallingCheckInterval = null;
+    }
+
+    if (this.hostPingInterval) {
+      clearInterval(this.hostPingInterval);
+      this.hostPingInterval = null;
     }
 
     if (this.iceGatheringTimeout) {

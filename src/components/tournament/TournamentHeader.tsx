@@ -46,14 +46,10 @@ export function TournamentHeader({
   const getSyncIcon = () => {
     if (syncState.error) return AlertCircle;
     switch (syncState.status) {
-      case 'connected':
-        return Wifi;
-      case 'host':
-        return Crown;
-      case 'connecting':
-        return Loader2;
-      default:
-        return Globe;
+      case 'connected': return Wifi;
+      case 'host': return Crown;
+      case 'connecting': return Loader2;
+      default: return Globe;
     }
   };
 
@@ -89,28 +85,20 @@ export function TournamentHeader({
   const getSyncLabel = () => {
     if (syncState.error) return 'Connection Error';
     switch (syncState.status) {
-      case 'connected':
-        return `Synced (${syncState.connectedPeers} connected)`;
-      case 'host':
-        return `Hosting (${syncState.connectedPeers} connected)`;
-      case 'connecting':
-        return 'Connecting...';
-      default:
-        return 'Real-time Sync';
+      case 'connected': return 'Real-time Sync';
+      case 'host': return 'Real-time Sync';
+      case 'connecting': return 'Connecting...';
+      default: return 'Real-time Sync';
     }
   };
 
   const getSyncTooltip = () => {
     if (syncState.error) return syncState.error;
     switch (syncState.status) {
-      case 'connected':
-        return `Connected to host with ${syncState.connectedPeers} other participant${syncState.connectedPeers !== 1 ? 's' : ''}`;
-      case 'host':
-        return `Hosting sync session with ${syncState.connectedPeers} connected participant${syncState.connectedPeers !== 1 ? 's' : ''}`;
-      case 'connecting':
-        return 'Establishing sync connection...';
-      default:
-        return 'Enable real-time sync with other participants';
+      case 'connected': return `Connected with ${syncState.connectedPeers} other participant${syncState.connectedPeers !== 1 ? 's' : ''}`;
+      case 'host': return `Hosting session with ${syncState.connectedPeers} connected participant${syncState.connectedPeers !== 1 ? 's' : ''}`;
+      case 'connecting': return 'Establishing sync connection...';
+      default: return 'Enable real-time sync with other participants';
     }
   };
 
@@ -120,12 +108,13 @@ export function TournamentHeader({
         <motion.button
           onClick={() => onViewModeChange(mode)}
           className={`
-            flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium
+            flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium 
             ${viewMode === mode 
               ? 'bg-accent text-white' 
               : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
             }
             transition-colors
+            h-10
           `}
           whileHover={{ scale: 1.00 }}
           whileTap={{ scale: 0.95 }}
@@ -153,7 +142,8 @@ export function TournamentHeader({
     isActive,
     tooltip,
     isLoading,
-    customClasses
+    customClasses,
+    badge,
   }: { 
     icon: any;
     label: string;
@@ -162,37 +152,48 @@ export function TournamentHeader({
     tooltip: string;
     isLoading?: boolean;
     customClasses?: string;
+    badge?: string;
   }) => (
     <Tooltip.Root>
       <Tooltip.Trigger asChild>
-        <motion.button
-          onClick={onClick}
-          className={`
-            group relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium
-            ${customClasses || (isActive 
-              ? 'bg-gray-500 text-white dark:bg-gray-600' 
-              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/20'
+        <div className="relative">
+          <motion.button
+            onClick={onClick}
+            className={`
+              group relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium
+              ${customClasses || (isActive 
+                ? 'bg-gray-500 text-white dark:bg-gray-600' 
+                : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/20'
+              )}
+              transition-colors
+              ${isLoading ? 'cursor-wait' : ''}
+              h-10
+            `}
+            whileHover={{ scale: 1.00 }}
+            whileTap={{ scale: 0.95 }}
+          >
+            <Icon className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            <span>{label}</span>
+            {(syncState.status === 'connected' || syncState.status === 'host') && Icon === getSyncIcon() && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  cleanup();
+                }}
+                className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/10 dark:hover:bg-white/10"
+              >
+                <X className="w-3 h-3" />
+              </button>
             )}
-            transition-colors
-            ${isLoading ? 'cursor-wait' : ''}
-          `}
-          whileHover={{ scale: 1.00 }}
-          whileTap={{ scale: 0.95 }}
-        >
-          <Icon className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
-          <span>{label}</span>
-          {(syncState.status === 'connected' || syncState.status === 'host') && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                cleanup();
-              }}
-              className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/10 dark:hover:bg-white/10"
-            >
-              <X className="w-3 h-3" />
-            </button>
+          </motion.button>
+          {badge && (
+            <div className="absolute left-1/2 -translate-x-1/2 -bottom-5">
+              <span className="px-1.5 py-0.5 text-xs rounded-full bg-red-500/10 text-red-600 dark:text-red-400 whitespace-nowrap">
+                {badge}
+              </span>
+            </div>
           )}
-        </motion.button>
+        </div>
       </Tooltip.Trigger>
       <Tooltip.Portal>
         <Tooltip.Content 
@@ -200,7 +201,7 @@ export function TournamentHeader({
           sideOffset={5}
         >
           {tooltip}
-          {(syncState.status === 'connected' || syncState.status === 'host') && (
+          {(syncState.status === 'connected' || syncState.status === 'host') && Icon === getSyncIcon() && (
             <div className="mt-1 text-xs text-gray-500">Click × to disconnect</div>
           )}
           <Tooltip.Arrow className="fill-white dark:fill-gray-800" />
@@ -210,7 +211,7 @@ export function TournamentHeader({
   );
 
   return (
-    <div className="relative z-10 py-4 space-y-4">
+    <div className="relative z-10 py-3">
       {/* Top Bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -243,6 +244,23 @@ export function TournamentHeader({
 
         <div className="flex items-center gap-2">
           <ActionButton
+            icon={Cog}
+            label="Tournament Settings"
+            onClick={onSettingsToggle}
+            isActive={showSettings}
+            tooltip="Configure tournament rules and scoring"
+            badge={`${tournament.pointsConfig.type === 'POINTS' ? 'Points' : 'Win/Loss'} • ${tournament.phase === 'HOME_AND_AWAY' ? 'H&A' : 'Single'}`}
+          />
+
+          <ActionButton
+            icon={Eye}
+            label="View Settings"
+            onClick={onPreferencesToggle}
+            isActive={showPreferences}
+            tooltip="Configure display preferences"
+          />
+
+          <ActionButton
             icon={getSyncIcon()}
             label={getSyncLabel()}
             onClick={onSyncToggle}
@@ -250,36 +268,21 @@ export function TournamentHeader({
             isLoading={syncState.status === 'connecting'}
             tooltip={getSyncTooltip()}
             customClasses={getSyncButtonClasses()}
-          />
-
-          <ActionButton
-            icon={Eye}
-            label="View Options"
-            onClick={onPreferencesToggle}
-            isActive={showPreferences}
-            tooltip="Customize how tournament data is displayed"
-          />
-
-          <ActionButton
-            icon={Cog}
-            label="Tournament Settings"
-            onClick={onSettingsToggle}
-            isActive={showSettings}
-            tooltip="Configure tournament rules and manage data"
+            badge={syncState.status !== 'disconnected' ? `${syncState.connectedPeers} online` : undefined}
           />
 
           <ActionButton
             icon={Edit}
             label="Edit Details"
             onClick={onEdit}
-            tooltip="Modify tournament name, players, and point system"
+            tooltip="Modify tournament name and players"
           />
         </div>
       </div>
 
       {/* Bottom Bar */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="flex items-center justify-between mt-6"> {/* Removed min-h-full and h-100 */}
+        <div className="flex items-center gap-2 mt-12 -mb-2"> {/* Changed to items-center */}
           <ViewButton 
             mode="STATS" 
             icon={BarChart2} 
@@ -300,7 +303,7 @@ export function TournamentHeader({
           />
         </div>
 
-        <div className="w-64">
+        <div className="w-64 mt-4 -mb-2">
           <ParticipantSelector
             tournament={tournament}
             onSelect={onParticipantSelect}

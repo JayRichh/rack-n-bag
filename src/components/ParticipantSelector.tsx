@@ -9,7 +9,8 @@ import {
   ChevronDown,
   CheckCircle2,
   Trophy,
-  Target
+  Target,
+  Info
 } from 'lucide-react';
 
 interface ParticipantSelectorProps {
@@ -102,103 +103,127 @@ export function ParticipantSelector({ tournament, onSelect, variant = 'default' 
   };
 
   return (
-    <Tooltip.Provider delayDuration={200}>
-      <div className="relative">
-        <motion.button
-          onClick={() => setIsOpen(!isOpen)}
-          className={`
-            w-full flex items-center justify-between
-            px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700
-            bg-white dark:bg-gray-800 shadow-sm
-            ${variant === 'compact' ? 'text-sm' : 'text-base'}
-            hover:border-gray-300 dark:hover:border-gray-600
-            transition-colors
-          `}
-          whileTap={{ scale: 0.98 }}
-        >
-          <div className="flex items-center gap-2">
-            <User className="w-4 h-4 text-gray-400" />
-            <span className="text-gray-900 dark:text-gray-100 font-medium">
-              {selectedPlayer ? selectedPlayer.name : 'Select Player'}
-            </span>
-          </div>
-          <ChevronDown className={`
-            w-4 h-4 text-gray-400
-            transition-transform duration-200
-            ${isOpen ? 'rotate-180' : ''}
-          `} />
-        </motion.button>
-
-        <AnimatePresence>
-          {isOpen && (
-            <motion.div
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 4 }}
-              transition={{ duration: 0.15 }}
-              className="absolute z-50 w-full mt-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg"
+    <div className="space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+          Player Focus
+        </span>
+        <Tooltip.Root>
+          <Tooltip.Trigger asChild>
+            <button className="inline-flex items-center justify-center rounded-full p-0.5 text-gray-400 hover:text-gray-500 dark:text-gray-500 dark:hover:text-gray-400">
+              <Info className="h-4 w-4" />
+            </button>
+          </Tooltip.Trigger>
+          <Tooltip.Portal>
+            <Tooltip.Content
+              className="z-50 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg max-w-[250px] text-sm"
+              sideOffset={5}
             >
-              <div className="max-h-[280px] overflow-y-auto">
-                {playerStats.map(({ player, wins, draws, losses, form }) => (
-                  <Tooltip.Root key={player.id}>
-                    <Tooltip.Trigger asChild>
-                      <motion.button
-                        className={`
-                          w-full flex items-center justify-between px-3 py-2.5
-                          ${player.id === selectedPlayer?.id ? 'bg-accent/5 text-accent' : 'text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/50'}
-                          ${variant === 'compact' ? 'text-sm' : 'text-base'}
-                          transition-colors
-                        `}
-                        onClick={() => handleSelect(player)}
-                      >
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          {player.id === selectedPlayer?.id && (
-                            <CheckCircle2 className="w-4 h-4 shrink-0" />
-                          )}
-                          <span className="font-medium truncate">{player.name}</span>
-                        </div>
-                        {form.length > 0 && (
-                          <div className="flex items-center gap-1.5 ml-2">
-                            {form.map((result, i) => (
-                              <FormBadge key={i} result={result} />
-                            ))}
+              Select a player to highlight their results and performance in the tournament
+              <Tooltip.Arrow className="fill-white dark:fill-gray-800" />
+            </Tooltip.Content>
+          </Tooltip.Portal>
+        </Tooltip.Root>
+      </div>
+
+      <Tooltip.Provider delayDuration={200}>
+        <div className="relative">
+          <motion.button
+            onClick={() => setIsOpen(!isOpen)}
+            className={`
+              w-full flex items-center justify-between
+              px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700
+              bg-white dark:bg-gray-800 shadow-sm
+              ${variant === 'compact' ? 'text-sm' : 'text-base'}
+              hover:border-gray-300 dark:hover:border-gray-600
+              transition-colors
+            `}
+            whileTap={{ scale: 0.98 }}
+          >
+            <div className="flex items-center gap-2">
+              <User className="w-4 h-4 text-gray-400" />
+              <span className="text-gray-900 dark:text-gray-100 font-medium">
+                {selectedPlayer ? selectedPlayer.name : 'Select Player'}
+              </span>
+            </div>
+            <ChevronDown className={`
+              w-4 h-4 text-gray-400
+              transition-transform duration-200
+              ${isOpen ? 'rotate-180' : ''}
+            `} />
+          </motion.button>
+
+          <AnimatePresence>
+            {isOpen && (
+              <motion.div
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 4 }}
+                transition={{ duration: 0.15 }}
+                className="absolute z-50 w-full mt-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg"
+              >
+                <div className="max-h-[280px] overflow-y-auto">
+                  {playerStats.map(({ player, wins, draws, losses, form }) => (
+                    <Tooltip.Root key={player.id}>
+                      <Tooltip.Trigger asChild>
+                        <motion.button
+                          className={`
+                            w-full flex items-center justify-between px-3 py-2.5
+                            ${player.id === selectedPlayer?.id ? 'bg-accent/5 text-accent' : 'text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/50'}
+                            ${variant === 'compact' ? 'text-sm' : 'text-base'}
+                            transition-colors
+                          `}
+                          onClick={() => handleSelect(player)}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {player.id === selectedPlayer?.id && (
+                              <CheckCircle2 className="w-4 h-4 shrink-0" />
+                            )}
+                            <span className="font-medium truncate">{player.name}</span>
                           </div>
-                        )}
-                      </motion.button>
-                    </Tooltip.Trigger>
-                    <Tooltip.Portal>
-                      <Tooltip.Content
-                        className="z-50 bg-white dark:bg-gray-800 px-4 py-3 rounded-lg shadow-lg max-w-[200px]"
-                        sideOffset={5}
-                      >
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <Trophy className="w-4 h-4 text-accent" />
-                            <span className="text-sm font-medium">
-                              {wins} {wins === 1 ? 'Win' : 'Wins'}
-                            </span>
-                          </div>
-                          {draws > 0 && (
-                            <div className="flex items-center gap-2">
-                              <Target className="w-4 h-4 text-gray-400" />
-                              <span className="text-sm">
-                                {draws} {draws === 1 ? 'Draw' : 'Draws'}
-                              </span>
+                          {form.length > 0 && (
+                            <div className="flex items-center gap-1.5 ml-2">
+                              {form.map((result, i) => (
+                                <FormBadge key={i} result={result} />
+                              ))}
                             </div>
                           )}
-                          <div className="text-sm text-gray-500 dark:text-gray-400">
-                            {form.length > 0 ? 'Last 3 matches shown' : 'No matches played'}
+                        </motion.button>
+                      </Tooltip.Trigger>
+                      <Tooltip.Portal>
+                        <Tooltip.Content
+                          className="z-50 bg-white dark:bg-gray-800 px-4 py-3 rounded-lg shadow-lg max-w-[200px]"
+                          sideOffset={5}
+                        >
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2">
+                              <Trophy className="w-4 h-4 text-accent" />
+                              <span className="text-sm font-medium">
+                                {wins} {wins === 1 ? 'Win' : 'Wins'}
+                              </span>
+                            </div>
+                            {draws > 0 && (
+                              <div className="flex items-center gap-2">
+                                <Target className="w-4 h-4 text-gray-400" />
+                                <span className="text-sm">
+                                  {draws} {draws === 1 ? 'Draw' : 'Draws'}
+                                </span>
+                              </div>
+                            )}
+                            <div className="text-sm text-gray-500 dark:text-gray-400">
+                              {form.length > 0 ? 'Last 3 matches shown' : 'No matches played'}
+                            </div>
                           </div>
-                        </div>
-                      </Tooltip.Content>
-                    </Tooltip.Portal>
-                  </Tooltip.Root>
-                ))}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-    </Tooltip.Provider>
+                        </Tooltip.Content>
+                      </Tooltip.Portal>
+                    </Tooltip.Root>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </Tooltip.Provider>
+    </div>
   );
 }
