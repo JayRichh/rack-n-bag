@@ -16,13 +16,21 @@ interface SyncSession {
   tournamentId: string;
   lastActive: string;
   offer?: RTCSessionDescriptionInit;
+  hostId?: string;
 }
 
 interface SyncMessage {
-  type: 'tournament-update' | 'ping' | 'pong' | 'peer-list' | 'offer' | 'answer';
+  type: 'tournament-update' | 'ping' | 'pong' | 'peer-list' | 'offer' | 'answer' | 'host-status';
   data: any;
   senderId: string;
   timestamp: string;
+}
+
+export interface SyncState {
+  status: 'disconnected' | 'connecting' | 'connected' | 'host';
+  connectedPeers: number;
+  lastSync?: string;
+  hostId?: string;
 }
 
 const SYNC_STORAGE_KEY = 'tournament_sync_sessions';
@@ -34,6 +42,10 @@ export function useTournamentSync(tournamentId?: string) {
   const { showToast } = useToast();
   const [isHost, setIsHost] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
+  const [syncState, setSyncState] = useState<SyncState>({
+    status: 'disconnected',
+    connectedPeers: 0
+  });
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const broadcastChannelRef = useRef<BroadcastChannel | null>(null);
   const peerConnectionsRef = useRef<Map<string, PeerConnection>>(new Map());
@@ -50,6 +62,11 @@ export function useTournamentSync(tournamentId?: string) {
       
       if (session && Date.now() - new Date(session.lastActive).getTime() < 24 * 60 * 60 * 1000) {
         setIsHost(session.isHost);
+        setSyncState(prev => ({
+          ...prev,
+          status: session.isHost ? 'host' : 'connecting',
+          hostId: session.hostId
+        }));
         if (session.peers.length > 0) {
           reconnectToPeers(session.peers);
         }
@@ -91,6 +108,10 @@ export function useTournamentSync(tournamentId?: string) {
         peer.dataChannel.close();
       });
       peerConnectionsRef.current.clear();
+      setSyncState({
+        status: 'disconnected',
+        connectedPeers: 0
+      });
     };
   }, []);
 
@@ -106,13 +127,14 @@ export function useTournamentSync(tournamentId?: string) {
         peers: Array.from(peerConnectionsRef.current.keys()),
         tournamentId,
         lastActive: new Date().toISOString(),
-        offer
+        offer,
+        hostId: isHost ? tournamentId : syncState.hostId
       };
       localStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(sessions));
     } catch (error) {
       console.error('Failed to save sync session:', error);
     }
-  }, [tournamentId, isHost]);
+  }, [tournamentId, isHost, syncState.hostId]);
 
   // Setup ping interval to keep connections alive
   useEffect(() => {
@@ -138,23 +160,41 @@ export function useTournamentSync(tournamentId?: string) {
 
   // Handle connection state changes
   const updateConnectionState = useCallback(() => {
-    const hasActiveConnections = Array.from(peerConnectionsRef.current.values()).some(
+    const activeConnections = Array.from(peerConnectionsRef.current.values()).filter(
       peer => peer.dataChannel.readyState === 'open'
     );
+    const hasActiveConnections = activeConnections.length > 0;
     setIsConnected(hasActiveConnections);
+    
+    setSyncState(prev => ({
+      ...prev,
+      status: isHost ? 'host' : (hasActiveConnections ? 'connected' : 'disconnected'),
+      connectedPeers: activeConnections.length,
+      lastSync: new Date().toISOString()
+    }));
     
     if (hasActiveConnections) {
       setReconnectAttempts(0);
       saveSyncSession();
     }
-  }, [saveSyncSession]);
+  }, [saveSyncSession, isHost]);
 
   // Reconnect to peers
   const reconnectToPeers = useCallback(async (peerIds: string[]) => {
     if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
       showToast('Failed to reconnect after multiple attempts', 'error');
+      setSyncState(prev => ({
+        ...prev,
+        status: 'disconnected',
+        connectedPeers: 0
+      }));
       return;
     }
+
+    setSyncState(prev => ({
+      ...prev,
+      status: 'connecting'
+    }));
 
     try {
       for (const peerId of peerIds) {
@@ -202,6 +242,18 @@ export function useTournamentSync(tournamentId?: string) {
         };
         dataChannel.send(JSON.stringify(message));
       }
+
+      // Send host status if we're the host
+      if (isHost) {
+        const hostMessage: SyncMessage = {
+          type: 'host-status',
+          data: { hostId: tournamentId },
+          senderId: tournamentId!,
+          timestamp: new Date().toISOString()
+        };
+        dataChannel.send(JSON.stringify(hostMessage));
+      }
+
       updateConnectionState();
     };
     
@@ -221,6 +273,10 @@ export function useTournamentSync(tournamentId?: string) {
         switch (message.type) {
           case 'tournament-update':
             storage.saveTournament(message.data);
+            setSyncState(prev => ({
+              ...prev,
+              lastSync: message.timestamp
+            }));
             break;
             
           case 'ping':
@@ -247,6 +303,14 @@ export function useTournamentSync(tournamentId?: string) {
             if (missingPeers.length > 0) {
               reconnectToPeers(missingPeers);
             }
+            break;
+
+          case 'host-status':
+            // Update host ID in state
+            setSyncState(prev => ({
+              ...prev,
+              hostId: message.data.hostId
+            }));
             break;
 
           case 'offer':
@@ -294,6 +358,11 @@ export function useTournamentSync(tournamentId?: string) {
     if (!tournamentId) return;
     
     try {
+      setSyncState(prev => ({
+        ...prev,
+        status: 'connecting'
+      }));
+
       const sessionId = Math.random().toString(36).substring(2, 15);
       const peerConnection = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -315,11 +384,21 @@ export function useTournamentSync(tournamentId?: string) {
       // Store the offer for participants
       saveSyncSession(offer);
       
+      setSyncState(prev => ({
+        ...prev,
+        status: 'host',
+        hostId: tournamentId
+      }));
+
       updateConnectionState();
       showToast('Sync session created! Share the tournament ID with others to sync.', 'success');
     } catch (error) {
       console.error('Failed to create sync session:', error);
       showToast('Failed to create sync session.', 'error');
+      setSyncState(prev => ({
+        ...prev,
+        status: 'disconnected'
+      }));
     }
   };
 
@@ -328,11 +407,16 @@ export function useTournamentSync(tournamentId?: string) {
     if (!tournamentId) return;
     
     try {
+      setSyncState(prev => ({
+        ...prev,
+        status: 'connecting'
+      }));
+
       // Get the host's session info
       const sessions = JSON.parse(localStorage.getItem(SYNC_STORAGE_KEY) || '{}');
       const hostSession = sessions[tournamentId];
       
-      if (!hostSession?.offer) {
+      if (!hostSession?.offer || !hostSession?.hostId) {
         throw new Error('No active host session found');
       }
 
@@ -356,12 +440,21 @@ export function useTournamentSync(tournamentId?: string) {
         dataChannel: null as any, // Will be set in ondatachannel
         id: tournamentId
       });
+
+      setSyncState(prev => ({
+        ...prev,
+        hostId: hostSession.hostId
+      }));
       
       updateConnectionState();
       showToast('Successfully joined sync session!', 'success');
     } catch (error) {
       console.error('Failed to join sync session:', error);
       showToast('Failed to join sync session. Make sure a host has created the session.', 'error');
+      setSyncState(prev => ({
+        ...prev,
+        status: 'disconnected'
+      }));
     }
   };
 
@@ -386,6 +479,11 @@ export function useTournamentSync(tournamentId?: string) {
         dataChannel.send(JSON.stringify(message));
       }
     });
+
+    setSyncState(prev => ({
+      ...prev,
+      lastSync: new Date().toISOString()
+    }));
   };
 
   return {
@@ -393,6 +491,7 @@ export function useTournamentSync(tournamentId?: string) {
     joinSyncSession,
     broadcastUpdate,
     isHost,
-    isConnected
+    isConnected,
+    syncState
   };
 }

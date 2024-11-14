@@ -9,6 +9,16 @@ interface Settings {
   notifications: boolean;
 }
 
+interface SyncSession {
+  id: string;
+  isHost: boolean;
+  peers: string[];
+  tournamentId: string;
+  lastActive: string;
+  offer?: RTCSessionDescriptionInit;
+  hostId?: string;
+}
+
 class SafeStorage {
   private storage: Storage | null = null;
   private type: StorageType;
@@ -19,6 +29,9 @@ class SafeStorage {
     if (typeof window !== 'undefined') {
       // Listen for storage events from other tabs/windows
       window.addEventListener('storage', this.handleStorageEvent);
+      
+      // Clean up expired sync sessions periodically
+      setInterval(this.cleanupExpiredSessions, 60000); // Every minute
     }
   }
 
@@ -31,6 +44,27 @@ class SafeStorage {
       this.listeners.get(event.key)?.forEach(listener => listener(newValue));
     } catch (error) {
       console.warn('Failed to parse storage event value:', error);
+    }
+  };
+
+  private cleanupExpiredSessions = () => {
+    try {
+      const sessions = this.getItem<Record<string, SyncSession>>('tournament_sync_sessions', {});
+      let hasChanges = false;
+
+      // Remove sessions older than 24 hours
+      Object.entries(sessions).forEach(([id, session]) => {
+        if (Date.now() - new Date(session.lastActive).getTime() > 24 * 60 * 60 * 1000) {
+          delete sessions[id];
+          hasChanges = true;
+        }
+      });
+
+      if (hasChanges) {
+        this.setItem('tournament_sync_sessions', sessions);
+      }
+    } catch (error) {
+      console.warn('Failed to cleanup expired sessions:', error);
     }
   };
 
@@ -161,6 +195,13 @@ export const storage = {
     const tournaments = this.getTournaments();
     const filtered = tournaments.filter(t => t.id !== id);
     safeLocalStorage.setItem('tournaments', filtered);
+
+    // Also cleanup any associated sync sessions
+    const sessions = this.getSyncSessions();
+    if (sessions[id]) {
+      delete sessions[id];
+      this.saveSyncSessions(sessions);
+    }
   },
 
   getSettings(): Settings {
@@ -175,8 +216,37 @@ export const storage = {
     safeLocalStorage.setItem('settings', settings);
   },
 
+  getSyncSessions(): Record<string, SyncSession> {
+    return safeLocalStorage.getItem<Record<string, SyncSession>>('tournament_sync_sessions', {});
+  },
+
+  saveSyncSessions(sessions: Record<string, SyncSession>): void {
+    safeLocalStorage.setItem('tournament_sync_sessions', sessions);
+  },
+
+  getSyncSession(tournamentId: string): SyncSession | undefined {
+    const sessions = this.getSyncSessions();
+    return sessions[tournamentId];
+  },
+
+  saveSyncSession(session: SyncSession): void {
+    const sessions = this.getSyncSessions();
+    sessions[session.tournamentId] = session;
+    this.saveSyncSessions(sessions);
+  },
+
+  deleteSyncSession(tournamentId: string): void {
+    const sessions = this.getSyncSessions();
+    delete sessions[tournamentId];
+    this.saveSyncSessions(sessions);
+  },
+
   subscribeToSettings(callback: (settings: Settings) => void): () => void {
     return safeLocalStorage.subscribe('settings', callback);
+  },
+
+  subscribeToSyncSessions(callback: (sessions: Record<string, SyncSession>) => void): () => void {
+    return safeLocalStorage.subscribe('tournament_sync_sessions', callback);
   },
 
   cleanup(): void {

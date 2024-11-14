@@ -3,9 +3,10 @@
 import { motion } from 'framer-motion';
 import { Tournament } from '../../types/tournament';
 import { ParticipantSelector } from '../ParticipantSelector';
-import { Settings, ArrowLeft, Edit, Grid, BarChart2, Table2, Sliders, Eye, Cog, Globe, Wifi } from 'lucide-react';
+import { Settings, ArrowLeft, Edit, Grid, BarChart2, Table2, Sliders, Eye, Cog, Globe, Wifi, Crown, Loader2, WifiOff } from 'lucide-react';
 import { typography } from '../../lib/design-system';
 import * as Tooltip from '@radix-ui/react-tooltip';
+import { useTournamentSync } from '../../hooks/useTournamentSync';
 
 export type ViewMode = 'STATS' | 'GRID' | 'TABLE';
 
@@ -40,6 +41,47 @@ export function TournamentHeader({
   selectedPlayerId,
   onParticipantSelect
 }: TournamentHeaderProps) {
+  const { syncState } = useTournamentSync(tournament.id);
+
+  const getSyncIcon = () => {
+    switch (syncState.status) {
+      case 'connected':
+        return Wifi;
+      case 'host':
+        return Crown;
+      case 'connecting':
+        return Loader2;
+      default:
+        return Globe;
+    }
+  };
+
+  const getSyncLabel = () => {
+    switch (syncState.status) {
+      case 'connected':
+        return `Synced (${syncState.connectedPeers} connected)`;
+      case 'host':
+        return `Hosting (${syncState.connectedPeers} connected)`;
+      case 'connecting':
+        return 'Connecting...';
+      default:
+        return 'Real-time Sync';
+    }
+  };
+
+  const getSyncTooltip = () => {
+    switch (syncState.status) {
+      case 'connected':
+        return `Connected to host with ${syncState.connectedPeers} other participant${syncState.connectedPeers !== 1 ? 's' : ''}`;
+      case 'host':
+        return `Hosting sync session with ${syncState.connectedPeers} connected participant${syncState.connectedPeers !== 1 ? 's' : ''}`;
+      case 'connecting':
+        return 'Establishing sync connection...';
+      default:
+        return 'Enable real-time sync with other participants';
+    }
+  };
+
   const ViewButton = ({ mode, icon: Icon, label, tooltip }: { mode: ViewMode; icon: any; label: string; tooltip: string }) => (
     <Tooltip.Root>
       <Tooltip.Trigger asChild>
@@ -76,13 +118,15 @@ export function TournamentHeader({
     label,
     onClick, 
     isActive,
-    tooltip 
+    tooltip,
+    isLoading
   }: { 
     icon: any;
     label: string;
     onClick: () => void; 
     isActive?: boolean;
     tooltip: string;
+    isLoading?: boolean;
   }) => (
     <Tooltip.Root>
       <Tooltip.Trigger asChild>
@@ -95,11 +139,12 @@ export function TournamentHeader({
               : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
             }
             transition-colors
+            ${isLoading ? 'cursor-wait' : ''}
           `}
           whileHover={{ scale: 1.00 }}
           whileTap={{ scale: 0.95 }}
         >
-          <Icon className="w-4 h-4" />
+          <Icon className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           <span>{label}</span>
         </motion.button>
       </Tooltip.Trigger>
@@ -147,11 +192,12 @@ export function TournamentHeader({
 
         <div className="flex items-center gap-2">
           <ActionButton
-            icon={Globe}
-            label="Real-time Sync"
+            icon={getSyncIcon()}
+            label={getSyncLabel()}
             onClick={onSyncToggle}
-            isActive={showSync}
-            tooltip="Enable real-time sync with other participants"
+            isActive={showSync || syncState.status !== 'disconnected'}
+            isLoading={syncState.status === 'connecting'}
+            tooltip={getSyncTooltip()}
           />
 
           <ActionButton
