@@ -1,85 +1,90 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Tournament, Team } from '../types/tournament';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { 
-  Users,
   User,
   ChevronDown,
+  CheckCircle2,
   Trophy,
-  Target,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  BarChart3,
-  CheckCircle2
+  Target
 } from 'lucide-react';
 
 interface ParticipantSelectorProps {
   tournament: Tournament;
-  onSelect: (teamId: string) => void;
+  onSelect: (playerId: string) => void;
   variant?: 'default' | 'compact';
 }
 
 export function ParticipantSelector({ tournament, onSelect, variant = 'default' }: ParticipantSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedTeam, setSelectedTeam] = useState<Team | null>(null);
-  const [hoveredTeamId, setHoveredTeamId] = useState<string | null>(null);
+  const [selectedPlayer, setSelectedPlayer] = useState<Team | null>(null);
+
+  // Load initial selection from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedPlayerId = localStorage.getItem(`tournament_${tournament.id}_selected_player`);
+      if (storedPlayerId) {
+        const player = tournament.teams.find(t => t.id === storedPlayerId);
+        if (player) {
+          setSelectedPlayer(player);
+          onSelect(player.id);
+        }
+      }
+    }
+  }, [tournament.id, tournament.teams, onSelect]);
 
   const playerStats = useMemo(() => {
-    return tournament.teams.map(team => {
-      const teamFixtures = tournament.fixtures.filter(
-        f => f.played && (f.homeTeamId === team.id || f.awayTeamId === team.id)
+    return tournament.teams.map(player => {
+      const matches = tournament.fixtures.filter(
+        f => f.played && (f.homeTeamId === player.id || f.awayTeamId === player.id)
       );
 
       const stats = {
-        played: teamFixtures.length,
+        played: matches.length,
         wins: 0,
         draws: 0,
         losses: 0,
-        goalsFor: 0,
-        goalsAgainst: 0,
         form: [] as ('W' | 'L' | 'D')[]
       };
 
-      teamFixtures.forEach(fixture => {
-        const isHome = fixture.homeTeamId === team.id;
-        const teamScore = isHome ? fixture.homeScore! : fixture.awayScore!;
-        const opponentScore = isHome ? fixture.awayScore! : fixture.homeScore!;
+      matches.forEach(match => {
+        const isHome = match.homeTeamId === player.id;
+        const playerScore = isHome ? match.homeScore! : match.awayScore!;
+        const opponentScore = isHome ? match.awayScore! : match.homeScore!;
 
-        if (teamScore > opponentScore) {
+        if (playerScore > opponentScore) {
           stats.wins++;
           stats.form.push('W');
-        } else if (teamScore < opponentScore) {
+        } else if (playerScore < opponentScore) {
           stats.losses++;
           stats.form.push('L');
         } else {
           stats.draws++;
           stats.form.push('D');
         }
-
-        stats.goalsFor += teamScore;
-        stats.goalsAgainst += opponentScore;
       });
 
-      // Keep only last 5 matches for form
-      stats.form = stats.form.slice(-5);
+      // Keep only last 3 matches for form
+      stats.form = stats.form.slice(-3);
 
       return {
-        team,
-        ...stats,
-        goalDifference: stats.goalsFor - stats.goalsAgainst,
-        winRate: stats.played > 0 ? (stats.wins / stats.played) * 100 : 0
+        player,
+        ...stats
       };
-    });
+    }).sort((a, b) => b.wins - a.wins || a.player.name.localeCompare(b.player.name));
   }, [tournament]);
 
-  const handleSelect = (team: Team) => {
-    setSelectedTeam(team);
-    onSelect(team.id);
+  const handleSelect = (player: Team) => {
+    setSelectedPlayer(player);
+    onSelect(player.id);
     setIsOpen(false);
+    // Save selection to localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.setItem(`tournament_${tournament.id}_selected_player`, player.id);
+    }
   };
 
   const FormBadge = ({ result }: { result: 'W' | 'L' | 'D' }) => {
@@ -90,32 +95,31 @@ export function ParticipantSelector({ tournament, onSelect, variant = 'default' 
     };
 
     return (
-      <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-medium ${colors[result]}`}>
+      <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-xs font-medium ${colors[result]}`}>
         {result}
       </span>
     );
   };
 
   return (
-    <Tooltip.Provider>
+    <Tooltip.Provider delayDuration={200}>
       <div className="relative">
         <motion.button
           onClick={() => setIsOpen(!isOpen)}
           className={`
             w-full flex items-center justify-between
-            px-4 py-2 rounded-lg border border-gray-200 dark:border-gray-700
-            bg-white dark:bg-gray-800
+            px-3 py-2.5 rounded-lg border border-gray-200 dark:border-gray-700
+            bg-white dark:bg-gray-800 shadow-sm
             ${variant === 'compact' ? 'text-sm' : 'text-base'}
             hover:border-gray-300 dark:hover:border-gray-600
-            transition-colors  overflow-hidden
+            transition-colors
           `}
-          whileHover={{ y: -1 }}
-          whileTap={{ y: 0 }}
+          whileTap={{ scale: 0.98 }}
         >
           <div className="flex items-center gap-2">
             <User className="w-4 h-4 text-gray-400" />
-            <span className="text-gray-900 dark:text-gray-100">
-              {selectedTeam ? selectedTeam.name : 'Select Your Player'}
+            <span className="text-gray-900 dark:text-gray-100 font-medium">
+              {selectedPlayer ? selectedPlayer.name : 'Select Player'}
             </span>
           </div>
           <ChevronDown className={`
@@ -128,62 +132,62 @@ export function ParticipantSelector({ tournament, onSelect, variant = 'default' 
         <AnimatePresence>
           {isOpen && (
             <motion.div
-              initial={{ opacity: 0, y: 8 }}
+              initial={{ opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 8 }}
+              exit={{ opacity: 0, y: 4 }}
               transition={{ duration: 0.15 }}
-              className="absolute z-50 w-full mt-2 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg"
-              style={{ overflowX: 'hidden' }}
+              className="absolute z-50 w-full mt-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-lg"
             >
-              <div className="max-h-64 overflow-y-auto overflow-x-hidden scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-gray-100 dark:scrollbar-track-gray-800">
-                {playerStats.map(({ team, wins, draws, losses, form }) => (
-                  <Tooltip.Root key={team.id}>
+              <div className="max-h-[280px] overflow-y-auto">
+                {playerStats.map(({ player, wins, draws, losses, form }) => (
+                  <Tooltip.Root key={player.id}>
                     <Tooltip.Trigger asChild>
                       <motion.button
                         className={`
-                          w-full flex items-center justify-between px-4 py-2
-                          ${team.id === selectedTeam?.id ? 'bg-accent/5 text-accent' : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'}
+                          w-full flex items-center justify-between px-3 py-2.5
+                          ${player.id === selectedPlayer?.id ? 'bg-accent/5 text-accent' : 'text-gray-900 dark:text-gray-100 hover:bg-gray-50 dark:hover:bg-gray-700/50'}
                           ${variant === 'compact' ? 'text-sm' : 'text-base'}
                           transition-colors
                         `}
-                        onClick={() => handleSelect(team)}
-                        onMouseEnter={() => setHoveredTeamId(team.id)}
-                        onMouseLeave={() => setHoveredTeamId(null)}
-                        whileHover={{ x: 4 }}
-                        style={{ maxWidth: '100%' }}
+                        onClick={() => handleSelect(player)}
                       >
-                        <div className="flex items-center gap-2">
-                          {team.id === selectedTeam?.id && (
-                            <CheckCircle2 className="w-4 h-4" />
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          {player.id === selectedPlayer?.id && (
+                            <CheckCircle2 className="w-4 h-4 shrink-0" />
                           )}
-                          <span className="font-medium">{team.name}</span>
+                          <span className="font-medium truncate">{player.name}</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                          {form.map((result, i) => (
-                            <FormBadge key={i} result={result} />
-                          ))}
-                        </div>
+                        {form.length > 0 && (
+                          <div className="flex items-center gap-1.5 ml-2">
+                            {form.map((result, i) => (
+                              <FormBadge key={i} result={result} />
+                            ))}
+                          </div>
+                        )}
                       </motion.button>
                     </Tooltip.Trigger>
                     <Tooltip.Portal>
                       <Tooltip.Content
-                        className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-4 max-w-xs"
+                        className="z-50 bg-white dark:bg-gray-800 px-4 py-3 rounded-lg shadow-lg max-w-[200px]"
                         sideOffset={5}
                       >
                         <div className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-500 dark:text-gray-400">Record</span>
-                            <span className="font-medium">
-                              {wins}W - {draws}D - {losses}L
+                          <div className="flex items-center gap-2">
+                            <Trophy className="w-4 h-4 text-accent" />
+                            <span className="text-sm font-medium">
+                              {wins} {wins === 1 ? 'Win' : 'Wins'}
                             </span>
                           </div>
-                          <div className="flex items-center justify-between">
-                            <span className="text-gray-500 dark:text-gray-400">Recent Form</span>
-                            <div className="flex gap-1">
-                              {form.map((result, i) => (
-                                <FormBadge key={i} result={result} />
-                              ))}
+                          {draws > 0 && (
+                            <div className="flex items-center gap-2">
+                              <Target className="w-4 h-4 text-gray-400" />
+                              <span className="text-sm">
+                                {draws} {draws === 1 ? 'Draw' : 'Draws'}
+                              </span>
                             </div>
+                          )}
+                          <div className="text-sm text-gray-500 dark:text-gray-400">
+                            {form.length > 0 ? 'Last 3 matches shown' : 'No matches played'}
                           </div>
                         </div>
                       </Tooltip.Content>

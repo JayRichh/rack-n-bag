@@ -46,7 +46,12 @@ export interface Tournament {
 }
 
 export interface TournamentExport {
-  version: string;        // For future compatibility
-  tournament: Tournament;
-  action: 'INSERT' | 'UPDATE';
+  version: number;        // For future compatibility
+  type: 'tournament_export';
+  timestamp: string;      // ISO date string
+  data: Tournament;
+}
+
+export interface ImportError extends Error {
+  code: string;
 }

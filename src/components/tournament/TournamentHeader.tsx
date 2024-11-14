@@ -19,8 +19,8 @@ export interface TournamentHeaderProps {
   showPreferences: boolean;
   onEdit: () => void;
   onBack: () => void;
-  participantTeamId: string;
-  onParticipantSelect: (teamId: string) => void;
+  selectedPlayerId: string;
+  onParticipantSelect: (playerId: string) => void;
 }
 
 export function TournamentHeader({
@@ -33,7 +33,7 @@ export function TournamentHeader({
   showPreferences,
   onEdit,
   onBack,
-  participantTeamId,
+  selectedPlayerId,
   onParticipantSelect
 }: TournamentHeaderProps) {
   const ViewButton = ({ mode, icon: Icon, label, tooltip }: { mode: ViewMode; icon: any; label: string; tooltip: string }) => (
@@ -180,7 +180,7 @@ export function TournamentHeader({
             mode="GRID" 
             icon={Grid} 
             label="Results Grid" 
-            tooltip="View and update game results in a grid format"
+            tooltip="View and update match results in a grid format"
           />
           <ViewButton 
             mode="TABLE" 

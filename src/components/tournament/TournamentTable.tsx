@@ -3,7 +3,7 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { typography, containers } from '../../lib/design-system';
 import { Tournament, Team, ScoringType } from '../../types/tournament';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { Info, TrendingDown, TrendingUp, Minus, ChevronUp, ChevronDown } from 'lucide-react';
 
@@ -22,7 +22,7 @@ interface PlayerStats extends Team {
 
 interface TournamentTableProps {
   tournament: Tournament;
-  participantTeamId?: string;
+  selectedPlayerId?: string;
 }
 
 const columnDefinitions = {
@@ -67,17 +67,22 @@ function PositionIndicator({ current, previous }: { current: number; previous?: 
   return <TrendingDown className="w-4 h-4 text-red-500" />;
 }
 
-export function TournamentTable({ tournament, participantTeamId }: TournamentTableProps) {
+export function TournamentTable({ tournament, selectedPlayerId }: TournamentTableProps) {
   const [sortField, setSortField] = useState<SortField>('tournamentPoints');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
-  const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
+  const [expandedPlayerId, setExpandedPlayerId] = useState<string | null>(null);
 
   const isPointBased = tournament.pointsConfig.type === 'POINTS';
 
   const playerStats = useMemo<PlayerStats[]>(() => {
-    return tournament.teams.map(team => {
-      const teamFixtures = tournament.fixtures.filter(
-        f => f.homeTeamId === team.id || f.awayTeamId === team.id
+    // Get previous positions from localStorage
+    const positionsKey = `tournament_${tournament.id}_positions`;
+    const storedPositions = typeof window !== 'undefined' ? 
+      JSON.parse(localStorage.getItem(positionsKey) || '{}') : {};
+
+    const stats = tournament.teams.map(player => {
+      const matches = tournament.fixtures.filter(
+        f => f.homeTeamId === player.id || f.awayTeamId === player.id
       );
 
       const stats = {
@@ -92,25 +97,25 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
       };
 
       // Process fixtures in chronological order for form
-      const playedFixtures = teamFixtures
+      const playedFixtures = matches
         .filter(f => f.played)
         .sort((a, b) => new Date(a.datePlayed!).getTime() - new Date(b.datePlayed!).getTime());
 
-      playedFixtures.forEach(fixture => {
-        const isHome = fixture.homeTeamId === team.id;
+      playedFixtures.forEach(match => {
+        const isHome = match.homeTeamId === player.id;
         stats.gamesPlayed++;
 
         if (isPointBased) {
-          const teamScore = isHome ? fixture.homeScore! : fixture.awayScore!;
-          const opponentScore = isHome ? fixture.awayScore! : fixture.homeScore!;
-          stats.pointsScored += teamScore;
+          const playerScore = isHome ? match.homeScore! : match.awayScore!;
+          const opponentScore = isHome ? match.awayScore! : match.homeScore!;
+          stats.pointsScored += playerScore;
           stats.pointsConceded += opponentScore;
 
-          if (teamScore > opponentScore) {
+          if (playerScore > opponentScore) {
             stats.wins++;
             stats.tournamentPoints += tournament.pointsConfig.win;
             stats.form.push('W');
-          } else if (teamScore < opponentScore) {
+          } else if (playerScore < opponentScore) {
             stats.losses++;
             stats.tournamentPoints += tournament.pointsConfig.loss;
             stats.form.push('L');
@@ -121,8 +126,8 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
           }
         } else {
           // WIN_LOSS scoring
-          const winner = fixture.winner;
-          if (winner === team.id) {
+          const winner = match.winner;
+          if (winner === player.id) {
             stats.wins++;
             stats.tournamentPoints += tournament.pointsConfig.win;
             stats.form.push('W');
@@ -138,9 +143,10 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
       stats.form = stats.form.slice(-5);
 
       return {
-        ...team,
+        ...player,
         ...stats,
         pointsDifference: stats.pointsScored - stats.pointsConceded,
+        previousPosition: storedPositions[player.id]
       };
     }).sort((a, b) => {
       const getValue = (player: PlayerStats) => player[sortField];
@@ -166,6 +172,17 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
       
       return 0;
     });
+
+    // Store current positions for next render
+    if (typeof window !== 'undefined') {
+      const newPositions = stats.reduce((acc, player, index) => ({
+        ...acc,
+        [player.id]: index + 1
+      }), {});
+      localStorage.setItem(positionsKey, JSON.stringify(newPositions));
+    }
+
+    return stats;
   }, [tournament, sortField, sortDirection, isPointBased]);
 
   const handleSort = (field: SortField) => {
@@ -262,10 +279,10 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
                     exit={{ opacity: 0 }}
                     className={`
                       group transition-colors duration-150
-                      ${player.id === participantTeamId ? 'bg-accent/5' : 'hover:bg-muted/5'}
-                      ${expandedTeamId === player.id ? 'bg-muted/10' : ''}
+                      ${player.id === selectedPlayerId ? 'bg-accent/5' : 'hover:bg-muted/5'}
+                      ${expandedPlayerId === player.id ? 'bg-muted/10' : ''}
                     `}
-                    onClick={() => setExpandedTeamId(expandedTeamId === player.id ? null : player.id)}
+                    onClick={() => setExpandedPlayerId(expandedPlayerId === player.id ? null : player.id)}
                   >
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400 w-12">
                       <div className="flex items-center gap-2">
@@ -277,13 +294,13 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
                       </div>
                     </td>
                     <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium
-                      ${player.id === participantTeamId
+                      ${player.id === selectedPlayerId
                         ? 'text-accent font-bold'
                         : 'text-gray-900 dark:text-gray-100'
                       }`}
                     >
                       {player.name}
-                      {player.id === participantTeamId && (
+                      {player.id === selectedPlayerId && (
                         <span className="ml-2 text-xs text-accent/80">(You)</span>
                       )}
                     </td>
@@ -327,7 +344,7 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className={`${containers.card} ${
-              player.id === participantTeamId ? 'bg-accent/5' : ''
+              player.id === selectedPlayerId ? 'bg-accent/5' : ''
             }`}
           >
             <div className="flex justify-between items-start mb-4">
@@ -340,10 +357,10 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
                   />
                 </div>
                 <h3 className={`text-lg font-medium ${
-                  player.id === participantTeamId ? 'text-accent' : ''
+                  player.id === selectedPlayerId ? 'text-accent' : ''
                 }`}>
                   {player.name}
-                  {player.id === participantTeamId && (
+                  {player.id === selectedPlayerId && (
                     <span className="ml-2 text-xs text-accent/80">(You)</span>
                   )}
                 </h3>

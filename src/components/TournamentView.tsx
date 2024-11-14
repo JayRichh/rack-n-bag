@@ -44,31 +44,31 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
   const { getAnimationConfig, updateSettings: updateGlobalSettings, settings: globalSettings } = useGlobalSettings();
   const { showToast } = useToast();
 
-  const calculateTeamStats = useCallback((
+  const calculatePlayerStats = useCallback((
     teams: Team[],
     fixtures: Fixture[],
     pointsConfig: Tournament['pointsConfig']
   ): Team[] => {
-    return teams.map(team => {
-      const teamFixtures = fixtures.filter(f => 
-        f.played && (f.homeTeamId === team.id || f.awayTeamId === team.id)
+    return teams.map(player => {
+      const matches = fixtures.filter(f => 
+        f.played && (f.homeTeamId === player.id || f.awayTeamId === player.id)
       );
 
       let won = 0;
       let lost = 0;
       let points = 0;
 
-      teamFixtures.forEach(fixture => {
-        const isHome = fixture.homeTeamId === team.id;
+      matches.forEach(match => {
+        const isHome = match.homeTeamId === player.id;
         
         if (pointsConfig.type === 'POINTS') {
-          const teamScore = isHome ? fixture.homeScore! : fixture.awayScore!;
-          const opponentScore = isHome ? fixture.awayScore! : fixture.homeScore!;
+          const playerScore = isHome ? match.homeScore! : match.awayScore!;
+          const opponentScore = isHome ? match.awayScore! : match.homeScore!;
 
-          if (teamScore > opponentScore) {
+          if (playerScore > opponentScore) {
             won++;
             points += pointsConfig.win;
-          } else if (teamScore < opponentScore) {
+          } else if (playerScore < opponentScore) {
             lost++;
             points += pointsConfig.loss;
           } else {
@@ -76,7 +76,7 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
           }
         } else {
           // WIN_LOSS scoring
-          if (fixture.winner === team.id) {
+          if (match.winner === player.id) {
             won++;
             points += pointsConfig.win;
           } else {
@@ -87,8 +87,8 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
       });
 
       return {
-        ...team,
-        played: teamFixtures.length,
+        ...player,
+        played: matches.length,
         won,
         lost,
         points
@@ -98,7 +98,7 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
 
   const [currentTournament, setCurrentTournament] = useState<Tournament>(() => {
     // Initialize tournament with calculated stats
-    const updatedTeams = calculateTeamStats(
+    const updatedPlayers = calculatePlayerStats(
       tournament.teams,
       tournament.fixtures,
       tournament.pointsConfig
@@ -106,13 +106,13 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
 
     return {
       ...tournament,
-      teams: updatedTeams
+      teams: updatedPlayers
     };
   });
 
   const [showSettings, setShowSettings] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
-  const [participantTeamId, setParticipantTeamId] = useState<string>('');
+  const [selectedPlayerId, setSelectedPlayerId] = useState<string>('');
   const [settings, setSettings] = useState<Settings>(defaultTournamentSettings);
   const [isInitialized, setIsInitialized] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -129,9 +129,9 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
     if (!isMounted) return;
 
     try {
-      const storedParticipant = localStorage.getItem(`participant_team_${tournament.id}`);
-      if (storedParticipant) {
-        setParticipantTeamId(storedParticipant);
+      const storedPlayer = localStorage.getItem(`selected_player_${tournament.id}`);
+      if (storedPlayer) {
+        setSelectedPlayerId(storedPlayer);
       }
 
       const storedSettings = localStorage.getItem(`tournament_settings_${tournament.id}`);
@@ -180,20 +180,20 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
     });
   }, [updateGlobalSettings]);
 
-  // Save participant to localStorage
+  // Save selected player to localStorage
   useEffect(() => {
     if (!isInitialized || !isMounted) return;
 
     try {
-      if (participantTeamId) {
-        localStorage.setItem(`participant_team_${tournament.id}`, participantTeamId);
+      if (selectedPlayerId) {
+        localStorage.setItem(`selected_player_${tournament.id}`, selectedPlayerId);
       } else {
-        localStorage.removeItem(`participant_team_${tournament.id}`);
+        localStorage.removeItem(`selected_player_${tournament.id}`);
       }
     } catch (error) {
-      console.warn('Failed to save participant to localStorage:', error);
+      console.warn('Failed to save selected player to localStorage:', error);
     }
-  }, [participantTeamId, tournament.id, isInitialized, isMounted]);
+  }, [selectedPlayerId, tournament.id, isInitialized, isMounted]);
 
   const handleFixtureUpdate = useCallback((
     fixture: Fixture, 
@@ -229,8 +229,8 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
         ? currentTournament.fixtures.map((f, i) => i === existingFixtureIndex ? updatedFixture : f)
         : [...currentTournament.fixtures, updatedFixture];
 
-      // Calculate updated team stats
-      const updatedTeams = calculateTeamStats(
+      // Calculate updated player stats
+      const updatedPlayers = calculatePlayerStats(
         currentTournament.teams,
         updatedFixtures,
         currentTournament.pointsConfig
@@ -239,7 +239,7 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
       const updatedTournament: Tournament = {
         ...currentTournament,
         fixtures: updatedFixtures,
-        teams: updatedTeams,
+        teams: updatedPlayers,
         dateModified: new Date().toISOString()
       };
 
@@ -250,7 +250,7 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
       console.error('Failed to update fixture:', error);
       showToast('Failed to update match result', 'error');
     }
-  }, [currentTournament, showToast, calculateTeamStats]);
+  }, [currentTournament, showToast, calculatePlayerStats]);
 
   const handleViewModeChange = useCallback((mode: ViewMode) => {
     const current = new URLSearchParams(Array.from(searchParams.entries()));
@@ -260,17 +260,17 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
 
   if (!isInitialized || !isMounted) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="flex-1 flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-accent"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="flex-1 flex flex-col w-full">
       {/* Header */}
-      <div className="bg-background/95 backdrop-blur-sm border-b border-border">
-        <div className={containers.section}>
+      <div className="w-full bg-background/95 backdrop-blur-sm border-b border-border">
+        <div className={`${containers.wrapper} ${containers.section}`}>
           <TournamentHeader
             tournament={currentTournament}
             viewMode={viewMode}
@@ -287,8 +287,8 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
             showPreferences={showPreferences}
             onEdit={onEdit}
             onBack={onBack}
-            participantTeamId={participantTeamId}
-            onParticipantSelect={setParticipantTeamId}
+            selectedPlayerId={selectedPlayerId}
+            onParticipantSelect={setSelectedPlayerId}
           />
         </div>
       </div>
@@ -300,9 +300,9 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="bg-background/95 backdrop-blur-sm border-b border-border overflow-hidden"
+            className="w-full bg-background/95 backdrop-blur-sm border-b border-border overflow-hidden"
           >
-            <div className={containers.section}>
+            <div className={`${containers.wrapper} ${containers.section}`}>
               {showSettings && (
                 <TournamentSettings
                   tournament={currentTournament}
@@ -312,7 +312,7 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
                         throw new Error('Invalid tournament data');
                       }
 
-                      const updatedTeams = calculateTeamStats(
+                      const updatedPlayers = calculatePlayerStats(
                         updatedTournament.teams,
                         updatedTournament.fixtures,
                         updatedTournament.pointsConfig
@@ -320,7 +320,7 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
 
                       const finalTournament: Tournament = {
                         ...updatedTournament,
-                        teams: updatedTeams
+                        teams: updatedPlayers
                       };
 
                       setCurrentTournament(finalTournament);
@@ -349,42 +349,46 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className={`${containers.section} flex-1 py-8`}>
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.div 
-            key={viewMode}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="h-full"
-          >
-            {viewMode === 'STATS' && (
-              <TournamentStats
-                tournament={currentTournament}
-                participantTeamId={participantTeamId}
-              />
-            )}
+      <main className="flex-1 w-full overflow-x-auto">
+        <div className={`${containers.wrapper} py-8`}>
+          <div className={containers.section}>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.div 
+                key={viewMode}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.2 }}
+                className="w-full"
+              >
+                {viewMode === 'STATS' && (
+                  <TournamentStats
+                    tournament={currentTournament}
+                    selectedPlayerId={selectedPlayerId}
+                  />
+                )}
 
-            {viewMode === 'GRID' && (
-              <ResultsMatrix
-                tournament={currentTournament}
-                participantTeamId={settings.highlightMyMatches ? participantTeamId : undefined}
-                onUpdateResult={handleFixtureUpdate}
-              />
-            )}
+                {viewMode === 'GRID' && (
+                  <ResultsMatrix
+                    tournament={currentTournament}
+                    selectedPlayerId={settings.highlightMyMatches ? selectedPlayerId : undefined}
+                    onUpdateResult={handleFixtureUpdate}
+                  />
+                )}
 
-            {viewMode === 'TABLE' && (
-              <TournamentTable
-                tournament={currentTournament}
-                participantTeamId={participantTeamId}
-              />
-            )}
-          </motion.div>
-        </AnimatePresence>
+                {viewMode === 'TABLE' && (
+                  <TournamentTable
+                    tournament={currentTournament}
+                    selectedPlayerId={selectedPlayerId}
+                  />
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
 
-        {/* Scroll to Top Button */}
-        <ScrollToTop threshold={300} />
+          {/* Scroll to Top Button */}
+          <ScrollToTop threshold={300} />
+        </div>
       </main>
     </div>
   );

@@ -7,6 +7,8 @@ import * as Tooltip from '@radix-ui/react-tooltip';
 import { Loader2 } from 'lucide-react';
 import { useEffect } from 'react';
 import { ToastProvider } from './ToastContext';
+import { Footer } from './Footer';
+import { layout } from '../lib/design-system';
 
 export function ClientLayout({
   children,
@@ -37,7 +39,7 @@ export function ClientLayout({
 
   if (!isLoaded) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
+      <div className="h-[100dvh] flex items-center justify-center">
         {settings.lowMotion ? (
           <Loader2 className="w-8 h-8 text-accent" />
         ) : (
@@ -59,24 +61,9 @@ export function ClientLayout({
   return (
     <Tooltip.Provider delayDuration={settings.lowMotion ? 0 : 200}>
       <ToastProvider>
-        <div className="min-h-screen relative">
-          {settings.lowMotion ? (
-            <div className="flex-1 relative">
-              {children}
-            </div>
-          ) : (
-            <motion.div
-              key={pathname}
-              variants={pageTransition}
-              initial="hidden"
-              animate="show"
-              className="flex-1 relative"
-            >
-              {children}
-            </motion.div>
-          )}
-
-          {/* Navigation Progress Indicator - only show if animations are enabled */}
+        {/* Root container with dynamic viewport height */}
+        <div className={`${layout.pageWrapper} min-h-[100dvh] flex flex-col`}>
+          {/* Navigation Progress Indicator */}
           {!settings.lowMotion && (
             <motion.div
               key={`progress-${pathname}`}
@@ -93,6 +80,31 @@ export function ClientLayout({
               style={{ transformOrigin: "0%" }}
             />
           )}
+
+          {/* Main content area with proper overflow handling */}
+          <main className="flex-1 flex flex-col relative">
+            {/* Content wrapper with overflow handling */}
+            <div className="flex-1 flex flex-col w-full">
+              {settings.lowMotion ? (
+                <div className="flex-1">
+                  {children}
+                </div>
+              ) : (
+                <motion.div
+                  key={pathname}
+                  variants={pageTransition}
+                  initial="hidden"
+                  animate="show"
+                  className="flex-1"
+                >
+                  {children}
+                </motion.div>
+              )}
+            </div>
+          </main>
+
+          {/* Footer with flex-shrink-0 */}
+          <Footer />
         </div>
       </ToastProvider>
     </Tooltip.Provider>

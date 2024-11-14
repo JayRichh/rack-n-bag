@@ -1,15 +1,25 @@
-import { Tournament, ScoringType, PointsConfig } from '../types/tournament';
+import { Tournament, ScoringType, PointsConfig, TournamentExport, ImportError } from '../types/tournament';
 import { encodeTournament, decodeTournament } from './shortener';
 
 // Validation constants
 const MAX_FILE_SIZE = 1024 * 1024; // 1MB
 const VALID_SHARE_CODE_REGEX = /^[A-Za-z0-9_-]+$/;
+const CURRENT_VERSION = 6;
 
-class ImportError extends Error {
+class TournamentImportError extends Error implements ImportError {
   constructor(message: string, public readonly code: string) {
     super(message);
-    this.name = 'ImportError';
+    this.name = 'TournamentImportError';
   }
+}
+
+function createExportData(tournament: Tournament): TournamentExport {
+  return {
+    version: CURRENT_VERSION,
+    type: 'tournament_export',
+    timestamp: new Date().toISOString(),
+    data: tournament
+  };
 }
 
 export function exportTournament(tournament: Tournament): string {
@@ -17,19 +27,13 @@ export function exportTournament(tournament: Tournament): string {
     return encodeTournament(tournament);
   } catch (error) {
     console.error('Export error:', error);
-    throw new ImportError('Failed to export tournament', 'EXPORT_FAILED');
+    throw new TournamentImportError('Failed to export tournament', 'EXPORT_FAILED');
   }
 }
 
 export function downloadTournamentFile(tournament: Tournament) {
   try {
-    const data = {
-      version: 6,
-      type: 'tournament_export',
-      timestamp: new Date().toISOString(),
-      data: tournament
-    };
-    
+    const data = createExportData(tournament);
     const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -44,7 +48,7 @@ export function downloadTournamentFile(tournament: Tournament) {
     URL.revokeObjectURL(url);
   } catch (error) {
     console.error('Download error:', error);
-    throw new ImportError('Failed to download tournament file', 'DOWNLOAD_FAILED');
+    throw new TournamentImportError('Failed to download tournament file', 'DOWNLOAD_FAILED');
   }
 }
 
@@ -54,7 +58,7 @@ export async function copyTournamentToClipboard(tournament: Tournament): Promise
     await navigator.clipboard.writeText(shareCode);
   } catch (error) {
     console.error('Clipboard write error:', error);
-    throw new ImportError('Failed to copy tournament to clipboard', 'CLIPBOARD_WRITE_FAILED');
+    throw new TournamentImportError('Failed to copy tournament to clipboard', 'CLIPBOARD_WRITE_FAILED');
   }
 }
 
@@ -63,7 +67,7 @@ export async function importFromClipboardText(text: string): Promise<Tournament>
     const sanitizedText = text.trim();
     
     if (!sanitizedText) {
-      throw new ImportError('Empty clipboard data', 'INVALID_DATA');
+      throw new TournamentImportError('Empty clipboard data', 'INVALID_DATA');
     }
 
     if (VALID_SHARE_CODE_REGEX.test(sanitizedText)) {
@@ -71,7 +75,7 @@ export async function importFromClipboardText(text: string): Promise<Tournament>
         return decodeTournament(sanitizedText);
       } catch (error) {
         console.error('Share code decode error:', error);
-        throw new ImportError('Invalid share code format', 'INVALID_SHARE_CODE');
+        throw new TournamentImportError('Invalid share code format', 'INVALID_SHARE_CODE');
       }
     }
 
@@ -85,19 +89,19 @@ export async function importFromClipboardText(text: string): Promise<Tournament>
       return validateAndNormalizeTournament(parsed);
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
-      throw new ImportError('Invalid tournament data format', 'PARSE_FAILED');
+      throw new TournamentImportError('Invalid tournament data format', 'PARSE_FAILED');
     }
   } catch (error) {
-    if (error instanceof ImportError) throw error;
+    if (error instanceof TournamentImportError) throw error;
     console.error('Import error:', error);
-    throw new ImportError('Failed to import tournament data', 'IMPORT_FAILED');
+    throw new TournamentImportError('Failed to import tournament data', 'IMPORT_FAILED');
   }
 }
 
 export async function importTournament(file: File): Promise<Tournament> {
   return new Promise((resolve, reject) => {
     if (!validateTournamentFile(file)) {
-      reject(new ImportError('Invalid tournament file', 'INVALID_FILE'));
+      reject(new TournamentImportError('Invalid tournament file', 'INVALID_FILE'));
       return;
     }
 
@@ -110,13 +114,13 @@ export async function importTournament(file: File): Promise<Tournament> {
         resolve(tournament);
       } catch (error) {
         console.error('File parse error:', error);
-        reject(new ImportError('Failed to parse tournament file', 'PARSE_FAILED'));
+        reject(new TournamentImportError('Failed to parse tournament file', 'PARSE_FAILED'));
       }
     };
 
     reader.onerror = () => {
       console.error('File read error:', reader.error);
-      reject(new ImportError('Failed to read tournament file', 'READ_FAILED'));
+      reject(new TournamentImportError('Failed to read tournament file', 'READ_FAILED'));
     };
     
     reader.readAsText(file);
@@ -143,7 +147,7 @@ export async function importFromClipboard(): Promise<Tournament> {
     return importFromClipboardText(text);
   } catch (error) {
     console.error('Clipboard read error:', error);
-    throw new ImportError('Failed to read from clipboard', 'CLIPBOARD_READ_FAILED');
+    throw new TournamentImportError('Failed to read from clipboard', 'CLIPBOARD_READ_FAILED');
   }
 }
 
@@ -233,7 +237,7 @@ function validateAndNormalizeTournament(data: any): Tournament {
     };
   } catch (error) {
     console.error('Validation error:', error);
-    throw new ImportError(
+    throw new TournamentImportError(
       `Invalid tournament data: ${error instanceof Error ? error.message : 'unknown error'}`,
       'VALIDATION_FAILED'
     );

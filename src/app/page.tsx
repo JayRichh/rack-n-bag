@@ -22,7 +22,7 @@ const HeroContent = memo(() => (
         >
           <Image
             src="/corn-logo.png"
-            alt="CornSlam Logo"
+            alt="Rack 'n' Bag Logo"
             fill
             className="object-contain dark:invert"
             priority
@@ -56,7 +56,7 @@ HeroContent.displayName = 'HeroContent';
 
 const QuickTipsSection = memo(() => (
   <section className={`${layout.sectionSpacing} relative`}>
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-full">
+    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         whileInView={{ opacity: 1, y: 0 }}
@@ -137,15 +137,17 @@ QuickTipsSection.displayName = 'QuickTipsSection';
 
 export default function Home() {
   return (
-    <main className={layout.pageWrapper}>
-      {/* Hero Section */}
-      <div className="relative overflow-hidden border-b border-border bg-gradient-to-b from-background to-muted/5">
-        <ErrorBoundary>
-          <BackgroundShapes />
-        </ErrorBoundary>
+    <div className="flex-1 flex flex-col">
+      {/* Hero Section with Background */}
+      <div className="relative border-b border-border bg-gradient-to-b from-background to-muted/5">
+        <div className="absolute inset-0 overflow-hidden">
+          <ErrorBoundary>
+            <BackgroundShapes />
+          </ErrorBoundary>
+        </div>
 
-        <div className={`${containers.content} relative z-10`}>
-          <div className="max-h-[calc(100vh*0.5625)] min-h-[400px] py-12 flex flex-col justify-center">
+        <div className={`${containers.wrapper} relative z-10`}>
+          <div className="min-h-[400px] py-12 flex flex-col justify-center">
             <ErrorBoundary>
               <HeroContent />
             </ErrorBoundary>
@@ -154,8 +156,8 @@ export default function Home() {
       </div>
 
       {/* Content Section */}
-      <div className={`${containers.content} py-12`}>
-        <div className={`${containers.wrapper}`}>
+      <div className="flex-1">
+        <div className={`${containers.wrapper} py-12`}>
           <ErrorBoundary>
             <MemoizedTournamentList />
           </ErrorBoundary>
@@ -165,6 +167,6 @@ export default function Home() {
           </ErrorBoundary>
         </div>
       </div>
-    </main>
+    </div>
   );
 }
