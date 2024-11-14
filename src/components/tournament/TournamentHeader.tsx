@@ -7,6 +7,7 @@ import { Settings, ArrowLeft, Edit, Grid, BarChart2, Table2, Sliders, Eye, Cog, 
 import { typography } from '../../lib/design-system';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { useSyncContext } from '../SyncContext';
+import { SyncState } from '../../types/sync';
 
 export type ViewMode = 'STATS' | 'GRID' | 'TABLE';
 
@@ -57,18 +58,36 @@ export function TournamentHeader({
     }
   };
 
-  const getSyncColor = () => {
-    if (syncState.error) return 'red';
-    switch (syncState.status) {
-      case 'connected':
-        return 'emerald';
-      case 'host':
-        return 'blue';
-      case 'connecting':
-        return 'yellow';
-      default:
-        return 'gray';
+  const getSyncButtonClasses = () => {
+    const isActive = showSync || syncState.status !== 'disconnected';
+
+    if (syncState.error) {
+      return isActive
+        ? 'bg-red-500 text-white dark:bg-red-600'
+        : 'text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20';
     }
+
+    const statusStyles: Record<SyncState['status'], { active: string; inactive: string }> = {
+      'connected': {
+        active: 'bg-emerald-500 text-white dark:bg-emerald-600',
+        inactive: 'text-emerald-600 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-900/20'
+      },
+      'host': {
+        active: 'bg-blue-500 text-white dark:bg-blue-600',
+        inactive: 'text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+      },
+      'connecting': {
+        active: 'bg-yellow-500 text-white dark:bg-yellow-600',
+        inactive: 'text-yellow-600 dark:text-yellow-400 hover:bg-yellow-50 dark:hover:bg-yellow-900/20'
+      },
+      'disconnected': {
+        active: 'bg-gray-500 text-white dark:bg-gray-600',
+        inactive: 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/20'
+      }
+    };
+
+    const style = statusStyles[syncState.status];
+    return isActive ? style.active : style.inactive;
   };
 
   const getSyncLabel = () => {
@@ -121,10 +140,11 @@ export function TournamentHeader({
       </Tooltip.Trigger>
       <Tooltip.Portal>
         <Tooltip.Content 
-          className="bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm"
+          className="z-[100] bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm"
           sideOffset={5}
         >
           {tooltip}
+          <Tooltip.Arrow className="fill-white dark:fill-gray-800" />
         </Tooltip.Content>
       </Tooltip.Portal>
     </Tooltip.Root>
@@ -137,7 +157,7 @@ export function TournamentHeader({
     isActive,
     tooltip,
     isLoading,
-    color = 'gray'
+    customClasses
   }: { 
     icon: any;
     label: string;
@@ -145,18 +165,18 @@ export function TournamentHeader({
     isActive?: boolean;
     tooltip: string;
     isLoading?: boolean;
-    color?: string;
+    customClasses?: string;
   }) => (
     <Tooltip.Root>
       <Tooltip.Trigger asChild>
         <motion.button
           onClick={onClick}
           className={`
-            flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium
-            ${isActive 
-              ? `bg-${color}-500 text-white dark:bg-${color}-600` 
-              : `text-${color}-600 dark:text-${color}-400 hover:bg-${color}-50 dark:hover:bg-${color}-900/20`
-            }
+            group relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium
+            ${customClasses || (isActive 
+              ? 'bg-gray-500 text-white dark:bg-gray-600' 
+              : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-900/20'
+            )}
             transition-colors
             ${isLoading ? 'cursor-wait' : ''}
           `}
@@ -166,32 +186,35 @@ export function TournamentHeader({
           <Icon className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
           <span>{label}</span>
           {(syncState.status === 'connected' || syncState.status === 'host') && (
-            <X 
-              className="w-4 h-4 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" 
+            <button
               onClick={(e) => {
                 e.stopPropagation();
                 cleanup();
               }}
-            />
+              className="absolute right-1 top-1/2 -translate-y-1/2 p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/10 dark:hover:bg-white/10"
+            >
+              <X className="w-3 h-3" />
+            </button>
           )}
         </motion.button>
       </Tooltip.Trigger>
       <Tooltip.Portal>
         <Tooltip.Content 
-          className="bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm"
+          className="z-[100] bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm"
           sideOffset={5}
         >
           {tooltip}
           {(syncState.status === 'connected' || syncState.status === 'host') && (
             <div className="mt-1 text-xs text-gray-500">Click × to disconnect</div>
           )}
+          <Tooltip.Arrow className="fill-white dark:fill-gray-800" />
         </Tooltip.Content>
       </Tooltip.Portal>
     </Tooltip.Root>
   );
 
   return (
-    <div className="py-4 space-y-4">
+    <div className="relative z-10 py-4 space-y-4">
       {/* Top Bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -208,10 +231,11 @@ export function TournamentHeader({
             </Tooltip.Trigger>
             <Tooltip.Portal>
               <Tooltip.Content 
-                className="bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm"
+                className="z-[100] bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm"
                 sideOffset={5}
               >
                 Return to tournament list
+                <Tooltip.Arrow className="fill-white dark:fill-gray-800" />
               </Tooltip.Content>
             </Tooltip.Portal>
           </Tooltip.Root>
@@ -229,7 +253,7 @@ export function TournamentHeader({
             isActive={showSync || syncState.status !== 'disconnected'}
             isLoading={syncState.status === 'connecting'}
             tooltip={getSyncTooltip()}
-            color={getSyncColor()}
+            customClasses={getSyncButtonClasses()}
           />
 
           <ActionButton
