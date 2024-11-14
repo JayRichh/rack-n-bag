@@ -9,26 +9,37 @@ import {
   CheckCircle2,
   XCircle,
   CircleDot,
-  Clock,
-  Info
+  Clock
 } from 'lucide-react';
 import { ResultsEntryModal } from './ResultsEntryModal';
 
 interface ResultsMatrixProps {
   tournament: Tournament;
   participantTeamId?: string;
-  onUpdateResult?: (fixture: Fixture, homeScore: number, awayScore: number) => void;
+  onUpdateResult?: (fixture: Fixture, homeScore: number | undefined, awayScore: number | undefined, winnerId?: string) => void;
 }
 
-type GameResult = 'WIN' | 'LOSS' | 'DRAW' | 'PENDING';
+type MatchResult = 'WIN' | 'LOSS' | 'DRAW' | 'PENDING';
 
-function getGameResult(homeScore: number, awayScore: number): GameResult {
-  if (homeScore > awayScore) return 'WIN';
-  if (homeScore < awayScore) return 'LOSS';
+function getMatchResult(fixture: Fixture, teamId: string): MatchResult {
+  if (!fixture.played) return 'PENDING';
+  
+  if (fixture.winner) {
+    return fixture.winner === teamId ? 'WIN' : 'LOSS';
+  }
+  
+  if (fixture.homeScore === undefined || fixture.awayScore === undefined) return 'PENDING';
+  
+  const isHome = fixture.homeTeamId === teamId;
+  const teamScore = isHome ? fixture.homeScore : fixture.awayScore;
+  const opponentScore = isHome ? fixture.awayScore : fixture.homeScore;
+  
+  if (teamScore > opponentScore) return 'WIN';
+  if (teamScore < opponentScore) return 'LOSS';
   return 'DRAW';
 }
 
-function getResultColor(result: GameResult, isDark: boolean = false) {
+function getResultColor(result: MatchResult, isDark: boolean = false) {
   switch (result) {
     case 'WIN':
       return isDark ? 'bg-emerald-900/50 text-emerald-300' : 'bg-emerald-100 text-emerald-700';
@@ -41,7 +52,7 @@ function getResultColor(result: GameResult, isDark: boolean = false) {
   }
 }
 
-function getResultIcon(result: GameResult) {
+function getResultIcon(result: MatchResult) {
   switch (result) {
     case 'WIN':
       return <CheckCircle2 className="w-4 h-4" />;
@@ -54,22 +65,18 @@ function getResultIcon(result: GameResult) {
   }
 }
 
-function getPlayerStreak(fixtures: Tournament['fixtures'], teamId: string): { type: GameResult; count: number } | null {
+function getTeamStreak(fixtures: Tournament['fixtures'], teamId: string): { type: MatchResult; count: number } | null {
   const teamFixtures = fixtures
     .filter(f => f.played && (f.homeTeamId === teamId || f.awayTeamId === teamId))
     .sort((a, b) => new Date(b.datePlayed!).getTime() - new Date(a.datePlayed!).getTime());
 
   if (teamFixtures.length === 0) return null;
 
-  let streakType: GameResult | null = null;
+  let streakType: MatchResult | null = null;
   let streakCount = 0;
 
   for (const fixture of teamFixtures) {
-    const isHome = fixture.homeTeamId === teamId;
-    const result = getGameResult(
-      isHome ? fixture.homeScore! : fixture.awayScore!,
-      isHome ? fixture.awayScore! : fixture.homeScore!
-    );
+    const result = getMatchResult(fixture, teamId);
 
     if (streakType === null) {
       streakType = result;
@@ -92,9 +99,11 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
     awayTeam: Team;
   } | null>(null);
 
-  const playerStats = useMemo(() => {
+  const isPointBased = tournament.pointsConfig.type === 'POINTS';
+
+  const teamStats = useMemo(() => {
     return tournament.teams.map(team => {
-      const streak = getPlayerStreak(tournament.fixtures, team.id);
+      const streak = getTeamStreak(tournament.fixtures, team.id);
       return {
         ...team,
         streak
@@ -115,7 +124,7 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
     setSelectedFixture({ fixture, homeTeam, awayTeam });
   };
 
-  const handleSaveResult = (homeScore: number, awayScore: number) => {
+  const handleSaveResult = (homeScore: number | undefined, awayScore: number | undefined, winnerId?: string) => {
     if (!selectedFixture || !onUpdateResult) return;
 
     const { fixture, homeTeam, awayTeam } = selectedFixture;
@@ -128,222 +137,223 @@ export function ResultsMatrix({ tournament, participantTeamId, onUpdateResult }:
       datePlayed: new Date().toISOString()
     };
 
-    updatedFixture.homeScore = homeScore;
-    updatedFixture.awayScore = awayScore;
-    updatedFixture.played = true;
-    updatedFixture.datePlayed = new Date().toISOString();
-
-    onUpdateResult(updatedFixture, homeScore, awayScore);
+    onUpdateResult(updatedFixture, homeScore, awayScore, winnerId);
     setSelectedFixture(null);
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex-none space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className={`${typography.h2} text-black/90 dark:text-white/90 mb-2`}>
-              Results Grid
-            </h2>
-            <div className="flex items-center gap-2">
+    <Tooltip.Provider delayDuration={300}>
+      <div className="flex flex-col h-full">
+        <div className="flex-none space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className={`${typography.h2} text-black/90 dark:text-white/90 mb-2`}>
+                Results Grid
+              </h2>
               <p className="text-gray-600 dark:text-gray-400">
-                {onUpdateResult ? 'View and update game results' : 'View game results'}
+                View and update match results
               </p>
-              <Tooltip.Provider>
-                <Tooltip.Root>
-                  <Tooltip.Trigger asChild>
-                    <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                      <Info className="w-4 h-4" />
-                    </button>
-                  </Tooltip.Trigger>
-                  <Tooltip.Portal>
-                    <Tooltip.Content
-                      className="bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm max-w-xs"
-                      sideOffset={5}
-                    >
-                      <div className="space-y-2">
-                        <p>Click on any cell to enter game points.</p>
-                        <p>Winner gets {tournament.pointsConfig.win} tournament points</p>
-                        {tournament.pointsConfig.draw !== undefined && (
-                          <p>Draw awards {tournament.pointsConfig.draw} tournament points</p>
-                        )}
-                        <p>Loser gets {tournament.pointsConfig.loss} tournament points</p>
-                      </div>
-                    </Tooltip.Content>
-                  </Tooltip.Portal>
-                </Tooltip.Root>
-              </Tooltip.Provider>
             </div>
-          </div>
-          
-          {/* Legend */}
-          <div className="flex items-center gap-4 text-sm">
-            <div className="flex items-center gap-2">
-              <div className={`p-1 rounded ${getResultColor('WIN')}`}>
-                <CheckCircle2 className="w-4 h-4" />
+            
+            {/* Legend */}
+            <div className="flex items-center gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <div className={`p-1 rounded ${getResultColor('WIN')}`}>
+                  <CheckCircle2 className="w-4 h-4" />
+                </div>
+                <span className="text-gray-600 dark:text-gray-400">Win</span>
               </div>
-              <span className="text-gray-600 dark:text-gray-400">Win</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className={`p-1 rounded ${getResultColor('LOSS')}`}>
-                <XCircle className="w-4 h-4" />
+              <div className="flex items-center gap-2">
+                <div className={`p-1 rounded ${getResultColor('LOSS')}`}>
+                  <XCircle className="w-4 h-4" />
+                </div>
+                <span className="text-gray-600 dark:text-gray-400">Loss</span>
               </div>
-              <span className="text-gray-600 dark:text-gray-400">Loss</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className={`p-1 rounded ${getResultColor('DRAW')}`}>
-                <CircleDot className="w-4 h-4" />
-              </div>
-              <span className="text-gray-600 dark:text-gray-400">Draw</span>
+              {isPointBased && (
+                <div className="flex items-center gap-2">
+                  <div className={`p-1 rounded ${getResultColor('DRAW')}`}>
+                    <CircleDot className="w-4 h-4" />
+                  </div>
+                  <span className="text-gray-600 dark:text-gray-400">Draw</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
-      </div>
 
-      <div className="relative mt-6 min-h-[400px] border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
-        <div className="absolute inset-0 overflow-auto">
-          <table className="w-full border-separate border-spacing-0">
-            <thead>
-              <tr>
-                <th className="sticky left-0 z-10 bg-white dark:bg-gray-900 px-6 py-4 text-left border-b border-gray-200 dark:border-gray-800">
-                  <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Players
-                  </div>
-                </th>
-                {playerStats.map(team => (
-                  <th 
-                    key={team.id}
-                    className="px-6 py-4 border-b border-gray-200 dark:border-gray-800"
-                  >
-                    <div className={`
-                      flex flex-col items-center gap-2 
-                      ${team.id === participantTeamId ? 'text-accent' : 'text-gray-900 dark:text-gray-100'}
-                    `}>
-                      <span className="text-xs font-medium whitespace-nowrap">
-                        {team.name}
-                      </span>
-                      {team.streak && (
-                        <div className={`
-                          px-2 py-1 rounded-full text-xs font-medium
-                          ${getResultColor(team.streak.type)}
-                        `}>
-                          {team.streak.count} {team.streak.type.charAt(0)}
-                        </div>
-                      )}
+        <div className="relative flex-1 overflow-auto">
+          <div className="absolute inset-0">
+            <table className="w-full border-separate border-spacing-0">
+              <thead>
+                <tr>
+                  <th className="sticky left-0 z-10 bg-white dark:bg-gray-900 px-6 py-4 text-left">
+                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Teams
                     </div>
                   </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {playerStats.map(homeTeam => (
-                <tr key={homeTeam.id}>
-                  <th 
-                    className={`
-                      sticky left-0 z-10 bg-white dark:bg-gray-900
-                      px-6 py-4 text-sm font-medium whitespace-nowrap border-b border-gray-200 dark:border-gray-800
-                      ${homeTeam.id === participantTeamId ? 'text-accent' : 'text-gray-900 dark:text-gray-100'}
-                    `}
-                  >
-                    {homeTeam.name}
-                  </th>
-                  {playerStats.map(awayTeam => {
-                    const fixture = getFixture(homeTeam.id, awayTeam.id);
-                    const cellId = `${homeTeam.id}-${awayTeam.id}`;
-                    
-                    if (homeTeam.id === awayTeam.id) {
+                  {teamStats.map(team => (
+                    <th 
+                      key={team.id}
+                      className="px-6 py-4"
+                    >
+                      <Tooltip.Root>
+                        <Tooltip.Trigger asChild>
+                          <div className={`
+                            flex flex-col items-center gap-2 
+                            ${team.id === participantTeamId ? 'text-accent' : 'text-gray-900 dark:text-gray-100'}
+                          `}>
+                            <span className="text-xs font-medium whitespace-nowrap">
+                              {team.name}
+                            </span>
+                            {team.streak && (
+                              <div className={`
+                                px-2 py-1 rounded-full text-xs font-medium
+                                ${getResultColor(team.streak.type)}
+                              `}>
+                                {team.streak.count} {team.streak.type.charAt(0)}
+                              </div>
+                            )}
+                          </div>
+                        </Tooltip.Trigger>
+                        <Tooltip.Portal>
+                          <Tooltip.Content 
+                            className="z-50 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg"
+                            sideOffset={5}
+                          >
+                            <div className="text-sm">
+                              {team.streak 
+                                ? `${team.streak.count} match ${team.streak.type.toLowerCase()} streak`
+                                : 'No current streak'
+                              }
+                            </div>
+                          </Tooltip.Content>
+                        </Tooltip.Portal>
+                      </Tooltip.Root>
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {teamStats.map(homeTeam => (
+                  <tr key={homeTeam.id}>
+                    <th 
+                      className={`
+                        sticky left-0 z-10 bg-white dark:bg-gray-900
+                        px-6 py-4 text-sm font-medium whitespace-nowrap
+                        ${homeTeam.id === participantTeamId ? 'text-accent' : 'text-gray-900 dark:text-gray-100'}
+                      `}
+                    >
+                      {homeTeam.name}
+                    </th>
+                    {teamStats.map(awayTeam => {
+                      const fixture = getFixture(homeTeam.id, awayTeam.id);
+                      const cellId = `${homeTeam.id}-${awayTeam.id}`;
+                      
+                      if (homeTeam.id === awayTeam.id) {
+                        return (
+                          <td 
+                            key={cellId}
+                            className="px-4 py-3 text-center bg-gray-50 dark:bg-gray-800/50"
+                          >
+                            -
+                          </td>
+                        );
+                      }
+
+                      const result = fixture ? getMatchResult(fixture, homeTeam.id) : 'PENDING';
+
                       return (
                         <td 
                           key={cellId}
-                          className="px-4 py-3 text-center bg-gray-50 dark:bg-gray-800/50 border-b border-gray-200 dark:border-gray-800"
+                          className="relative p-0"
+                          onMouseEnter={() => setHoveredCell(cellId)}
+                          onMouseLeave={() => setHoveredCell(null)}
                         >
-                          -
-                        </td>
-                      );
-                    }
-
-                    let result: GameResult = 'PENDING';
-                    if (fixture?.played) {
-                      result = getGameResult(fixture.homeScore!, fixture.awayScore!);
-                    }
-
-                    return (
-                      <td 
-                        key={cellId}
-                        className="relative p-0 border-b border-gray-200 dark:border-gray-800"
-                      >
-                        <Tooltip.Provider>
                           <Tooltip.Root>
                             <Tooltip.Trigger asChild>
-                              <div 
-                                className="overflow-hidden"
-                                onMouseEnter={() => setHoveredCell(cellId)}
-                                onMouseLeave={() => setHoveredCell(null)}
-                              >
-                                <motion.div
-                                  className={`
-                                    flex items-center justify-center gap-2 p-3
-                                    ${getResultColor(result)}
-                                    ${hoveredCell === cellId && onUpdateResult ? 'ring-1 ring-inset ring-primary ring-opacity-50' : ''}
-                                    ${onUpdateResult ? 'cursor-pointer' : ''}
-                                    transform-gpu
-                                  `}
-                                  onClick={() => handleCellClick(homeTeam, awayTeam)}
-                                  whileHover={onUpdateResult ? { scale: 1.02 } : undefined}
-                                  transition={{ duration: 0.2 }}
-                                >
-                                  {fixture?.played ? (
-                                    <>
-                                      <span className="font-medium">
-                                        {fixture.homeScore} - {fixture.awayScore}
-                                      </span>
-                                      {getResultIcon(result)}
-                                    </>
-                                  ) : (
-                                    <span className="text-gray-400 dark:text-gray-500">vs</span>
-                                  )}
-                                </motion.div>
-                              </div>
-                            </Tooltip.Trigger>
-                            <Tooltip.Portal>
-                              <Tooltip.Content
-                                className="bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm"
-                                sideOffset={5}
+                              <motion.div
+                                className={`
+                                  flex items-center justify-center gap-2 p-3
+                                  ${getResultColor(result)}
+                                  ${hoveredCell === cellId && onUpdateResult ? 'ring-2 ring-primary ring-opacity-50' : ''}
+                                  ${onUpdateResult ? 'cursor-pointer' : ''}
+                                  transform-gpu
+                                `}
+                                onClick={() => handleCellClick(homeTeam, awayTeam)}
+                                whileHover={{ scale: onUpdateResult ? 1.02 : 1 }}
+                                transition={{ duration: 0.2 }}
                               >
                                 {fixture?.played ? (
                                   <>
-                                    {homeTeam.name} {fixture.homeScore} - {fixture.awayScore} {awayTeam.name}
-                                    <br />
-                                    {onUpdateResult && 'Click to update points'}
+                                    {isPointBased ? (
+                                      <span className="font-medium">
+                                        {fixture.homeScore} - {fixture.awayScore}
+                                      </span>
+                                    ) : (
+                                      <span className="font-medium">
+                                        {result === 'WIN' ? 'W' : 'L'}
+                                      </span>
+                                    )}
+                                    {getResultIcon(result)}
                                   </>
                                 ) : (
-                                  onUpdateResult ? 'Click to enter points' : 'Game not played'
+                                  <span className="text-gray-400 dark:text-gray-500">vs</span>
+                                )}
+                              </motion.div>
+                            </Tooltip.Trigger>
+                            <Tooltip.Portal>
+                              <Tooltip.Content 
+                                className="z-50 bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg"
+                                sideOffset={5}
+                              >
+                                {fixture?.played ? (
+                                  <div className="space-y-1">
+                                    <div className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                                      {homeTeam.name} vs {awayTeam.name}
+                                    </div>
+                                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                                      {new Date(fixture.datePlayed!).toLocaleDateString()}
+                                    </div>
+                                    {isPointBased ? (
+                                      <div className="text-sm font-medium">
+                                        Final Score: {fixture.homeScore} - {fixture.awayScore}
+                                      </div>
+                                    ) : (
+                                      <div className="text-sm font-medium">
+                                        Winner: {fixture.winner === homeTeam.id ? homeTeam.name : awayTeam.name}
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                                    {onUpdateResult ? 'Click to enter result' : 'Match not played yet'}
+                                  </div>
                                 )}
                               </Tooltip.Content>
                             </Tooltip.Portal>
                           </Tooltip.Root>
-                        </Tooltip.Provider>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
 
-      {selectedFixture && (
-        <ResultsEntryModal
-          isOpen={true}
-          onClose={() => setSelectedFixture(null)}
-          onSave={handleSaveResult}
-          homeTeam={selectedFixture.homeTeam}
-          awayTeam={selectedFixture.awayTeam}
-          fixture={selectedFixture.fixture}
-          tournament={tournament}
-        />
-      )}
-    </div>
+        {selectedFixture && (
+          <ResultsEntryModal
+            isOpen={true}
+            onClose={() => setSelectedFixture(null)}
+            onSave={handleSaveResult}
+            homeTeam={selectedFixture.homeTeam}
+            awayTeam={selectedFixture.awayTeam}
+            fixture={selectedFixture.fixture}
+            tournament={tournament} 
+          />
+        )}
+      </div>
+    </Tooltip.Provider>
   );
 }

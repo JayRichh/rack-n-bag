@@ -116,14 +116,30 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
     }
   }, [participantTeamId, tournament.id, isInitialized, isMounted]);
 
-  const handleFixtureUpdate = useCallback((fixture: Fixture, homeScore: number, awayScore: number) => {
+  const handleFixtureUpdate = useCallback((
+    fixture: Fixture, 
+    homeScore: number | undefined, 
+    awayScore: number | undefined, 
+    winnerId?: string
+  ) => {
     try {
+      const isPointBased = currentTournament.pointsConfig.type === 'POINTS';
+      
       const updatedFixture = {
         ...fixture,
-        homeScore,
-        awayScore,
         played: true,
-        datePlayed: new Date().toISOString()
+        datePlayed: new Date().toISOString(),
+        // For points-based scoring, include scores
+        ...(isPointBased ? {
+          homeScore,
+          awayScore,
+          winner: undefined
+        } : {
+          // For win/loss scoring, include winner and clear scores
+          homeScore: undefined,
+          awayScore: undefined,
+          winner: winnerId
+        })
       };
 
       const existingFixtureIndex = currentTournament.fixtures.findIndex(f => 
