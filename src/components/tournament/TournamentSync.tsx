@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTournamentSync } from '../../hooks/useTournamentSync';
 import { typography } from '../../lib/design-system';
@@ -13,7 +13,8 @@ import {
   ArrowRight,
   Crown,
   Clock,
-  Loader2
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 
 interface SyncSectionProps {
@@ -62,9 +63,22 @@ function SyncSection({ title, icon: Icon, children, tooltip }: SyncSectionProps)
 }
 
 export function TournamentSync({ tournamentId }: { tournamentId: string }) {
-  const { createSyncSession, joinSyncSession, isHost, syncState } = useTournamentSync(tournamentId);
+  const { 
+    createSyncSession, 
+    joinSyncSession, 
+    isHost, 
+    syncState,
+    cleanup 
+  } = useTournamentSync(tournamentId);
+
+  // Ensure cleanup on unmount
+  useEffect(() => {
+    return () => cleanup();
+  }, [cleanup]);
 
   const getStatusColor = () => {
+    if (syncState.error) return 'red';
+    
     switch (syncState.status) {
       case 'connected':
         return 'emerald';
@@ -78,6 +92,8 @@ export function TournamentSync({ tournamentId }: { tournamentId: string }) {
   };
 
   const getStatusText = () => {
+    if (syncState.error) return 'Error';
+    
     switch (syncState.status) {
       case 'connected':
         return 'Connected';
@@ -91,6 +107,8 @@ export function TournamentSync({ tournamentId }: { tournamentId: string }) {
   };
 
   const getStatusIcon = () => {
+    if (syncState.error) return <AlertCircle className="w-4 h-4" />;
+    
     switch (syncState.status) {
       case 'connected':
         return <Wifi className="w-4 h-4" />;
@@ -102,6 +120,8 @@ export function TournamentSync({ tournamentId }: { tournamentId: string }) {
         return <WifiOff className="w-4 h-4" />;
     }
   };
+
+  const isTransitioning = syncState.status === 'connecting';
 
   return (
     <div className="py-6">
@@ -116,9 +136,10 @@ export function TournamentSync({ tournamentId }: { tournamentId: string }) {
           </h2>
         </div>
 
-        <AnimatePresence>
-          {syncState.status !== 'disconnected' && (
+        <AnimatePresence mode="wait">
+          {(syncState.status !== 'disconnected' || syncState.error) && (
             <motion.div
+              key={syncState.status + (syncState.error ? '-error' : '')}
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 20 }}
@@ -140,7 +161,7 @@ export function TournamentSync({ tournamentId }: { tournamentId: string }) {
         >
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
             <div className="flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-200 dark:border-gray-700">
-              {syncState.status !== 'disconnected' ? (
+              {syncState.status !== 'disconnected' || syncState.error ? (
                 <>
                   <div className={`p-2 rounded-full bg-${getStatusColor()}-100 dark:bg-${getStatusColor()}-900/30`}>
                     {getStatusIcon()}
@@ -150,14 +171,16 @@ export function TournamentSync({ tournamentId }: { tournamentId: string }) {
                       {getStatusText()}
                     </h4>
                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                      {syncState.connectedPeers > 0 ? (
+                      {syncState.error ? (
+                        syncState.error
+                      ) : syncState.connectedPeers > 0 ? (
                         `${syncState.connectedPeers} connected participant${syncState.connectedPeers !== 1 ? 's' : ''}`
                       ) : (
                         'Waiting for participants to join...'
                       )}
                     </p>
                   </div>
-                  {syncState.lastSync && (
+                  {!syncState.error && syncState.lastSync && (
                     <div className="flex items-center gap-2 text-sm text-gray-500">
                       <Clock className="w-4 h-4" />
                       <span>Last sync: {new Date(syncState.lastSync).toLocaleTimeString()}</span>
@@ -184,7 +207,7 @@ export function TournamentSync({ tournamentId }: { tournamentId: string }) {
         </SyncSection>
 
         {/* Sync Controls */}
-        {syncState.status === 'disconnected' && (
+        {syncState.status === 'disconnected' && !syncState.error && (
           <SyncSection
             title="Start Syncing"
             icon={Link}
@@ -194,9 +217,12 @@ export function TournamentSync({ tournamentId }: { tournamentId: string }) {
               <div className="grid grid-cols-2 gap-4">
                 <motion.button
                   onClick={createSyncSession}
-                  className="flex items-center gap-3 p-4 rounded-lg border-2 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-accent hover:text-accent transition-colors group"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                  disabled={isTransitioning}
+                  className={`flex items-center gap-3 p-4 rounded-lg border-2 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-accent hover:text-accent transition-colors group ${
+                    isTransitioning ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                  whileHover={isTransitioning ? {} : { scale: 1.02 }}
+                  whileTap={isTransitioning ? {} : { scale: 0.98 }}
                 >
                   <Crown className="w-5 h-5" />
                   <div className="text-left flex-1">
@@ -210,9 +236,12 @@ export function TournamentSync({ tournamentId }: { tournamentId: string }) {
 
                 <motion.button
                   onClick={joinSyncSession}
-                  className="flex items-center gap-3 p-4 rounded-lg border-2 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-accent hover:text-accent transition-colors group"
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                  disabled={isTransitioning}
+                  className={`flex items-center gap-3 p-4 rounded-lg border-2 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:border-accent hover:text-accent transition-colors group ${
+                    isTransitioning ? 'opacity-50 cursor-not-allowed' : ''
+                  }`}
+                  whileHover={isTransitioning ? {} : { scale: 1.02 }}
+                  whileTap={isTransitioning ? {} : { scale: 0.98 }}
                 >
                   <Link className="w-5 h-5" />
                   <div className="text-left flex-1">

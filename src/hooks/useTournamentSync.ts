@@ -24,6 +24,7 @@ interface SyncMessage {
   data: any;
   senderId: string;
   timestamp: string;
+  version: number; // Added for message versioning
 }
 
 export interface SyncState {
@@ -31,12 +32,14 @@ export interface SyncState {
   connectedPeers: number;
   lastSync?: string;
   hostId?: string;
+  error?: string;
 }
 
-const SYNC_STORAGE_KEY = 'tournament_sync_sessions';
-const PING_INTERVAL = 30000; // 30 seconds
-const RECONNECT_INTERVAL = 5000; // 5 seconds
+const SYNC_VERSION = 1; // Added for compatibility checking
+const PING_INTERVAL = 30000;
+const RECONNECT_INTERVAL = 5000;
 const MAX_RECONNECT_ATTEMPTS = 3;
+const CONNECTION_TIMEOUT = 10000;
 
 export function useTournamentSync(tournamentId?: string) {
   const { showToast } = useToast();
@@ -51,30 +54,21 @@ export function useTournamentSync(tournamentId?: string) {
   const peerConnectionsRef = useRef<Map<string, PeerConnection>>(new Map());
   const pingIntervalRef = useRef<NodeJS.Timeout>();
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
-  
-  // Load existing sync session
+  const connectionTimeoutRef = useRef<NodeJS.Timeout>();
+  const cleanupInProgressRef = useRef(false);
+
+  // Validate tournament exists
   useEffect(() => {
     if (!tournamentId) return;
     
-    try {
-      const session = storage.getSyncSession(tournamentId);
-      
-      if (session && Date.now() - new Date(session.lastActive).getTime() < 24 * 60 * 60 * 1000) {
-        setIsHost(session.isHost);
-        setSyncState(prev => ({
-          ...prev,
-          status: session.isHost ? 'host' : 'connecting',
-          hostId: session.hostId
-        }));
-        if (session.peers.length > 0) {
-          reconnectToPeers(session.peers);
-        }
-      } else if (session) {
-        // Clean up expired session
-        storage.deleteSyncSession(tournamentId);
-      }
-    } catch (error) {
-      console.error('Failed to load sync session:', error);
+    const tournament = storage.getTournament(tournamentId);
+    if (!tournament) {
+      setSyncState(prev => ({
+        ...prev,
+        status: 'disconnected',
+        error: 'Tournament not found'
+      }));
+      return;
     }
   }, [tournamentId]);
 
@@ -96,22 +90,42 @@ export function useTournamentSync(tournamentId?: string) {
     };
   }, [tournamentId]);
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
+  // Cleanup function
+  const cleanup = useCallback(() => {
+    if (cleanupInProgressRef.current) return;
+    cleanupInProgressRef.current = true;
+
+    try {
       clearInterval(pingIntervalRef.current);
       clearTimeout(reconnectTimeoutRef.current);
+      clearTimeout(connectionTimeoutRef.current);
+      
       peerConnectionsRef.current.forEach(peer => {
         peer.connection.close();
         peer.dataChannel.close();
       });
       peerConnectionsRef.current.clear();
+      
+      if (isHost && tournamentId) {
+        storage.deleteSyncSession(tournamentId);
+      }
+      
       setSyncState({
         status: 'disconnected',
         connectedPeers: 0
       });
-    };
-  }, []);
+      setIsHost(false);
+      setIsConnected(false);
+      setReconnectAttempts(0);
+    } finally {
+      cleanupInProgressRef.current = false;
+    }
+  }, [isHost, tournamentId]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return cleanup;
+  }, [cleanup]);
 
   // Save sync session state
   const saveSyncSession = useCallback((offer?: RTCSessionDescriptionInit) => {
@@ -133,7 +147,7 @@ export function useTournamentSync(tournamentId?: string) {
     }
   }, [tournamentId, isHost, syncState.hostId]);
 
-  // Setup ping interval to keep connections alive
+  // Setup ping interval
   useEffect(() => {
     if (!isConnected || peerConnectionsRef.current.size === 0) return;
     
@@ -142,7 +156,8 @@ export function useTournamentSync(tournamentId?: string) {
         type: 'ping',
         data: null,
         senderId: tournamentId!,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        version: SYNC_VERSION
       };
       
       peerConnectionsRef.current.forEach(peer => {
@@ -161,13 +176,19 @@ export function useTournamentSync(tournamentId?: string) {
       peer => peer.dataChannel.readyState === 'open'
     );
     const hasActiveConnections = activeConnections.length > 0;
+    
+    if (hasActiveConnections) {
+      clearTimeout(connectionTimeoutRef.current);
+    }
+    
     setIsConnected(hasActiveConnections);
     
     setSyncState(prev => ({
       ...prev,
       status: isHost ? 'host' : (hasActiveConnections ? 'connected' : 'disconnected'),
       connectedPeers: activeConnections.length,
-      lastSync: new Date().toISOString()
+      lastSync: new Date().toISOString(),
+      error: undefined
     }));
     
     if (hasActiveConnections) {
@@ -176,15 +197,156 @@ export function useTournamentSync(tournamentId?: string) {
     }
   }, [saveSyncSession, isHost]);
 
+  // Setup data channel handlers
+  const setupDataChannel = useCallback((dataChannel: RTCDataChannel, peerId: string) => {
+    dataChannel.onopen = () => {
+      const tournament = storage.getTournament(tournamentId!);
+      if (tournament) {
+        const message: SyncMessage = {
+          type: 'tournament-update',
+          data: tournament,
+          senderId: tournamentId!,
+          timestamp: new Date().toISOString(),
+          version: SYNC_VERSION
+        };
+        dataChannel.send(JSON.stringify(message));
+      }
+
+      if (isHost) {
+        const hostMessage: SyncMessage = {
+          type: 'host-status',
+          data: { hostId: tournamentId },
+          senderId: tournamentId!,
+          timestamp: new Date().toISOString(),
+          version: SYNC_VERSION
+        };
+        dataChannel.send(JSON.stringify(hostMessage));
+      }
+
+      updateConnectionState();
+    };
+    
+    dataChannel.onclose = updateConnectionState;
+    dataChannel.onerror = (error) => {
+      console.error('DataChannel error:', error);
+      updateConnectionState();
+    };
+    
+    dataChannel.onmessage = async (event) => {
+      try {
+        const message: SyncMessage = JSON.parse(event.data);
+        
+        // Version check
+        if (message.version !== SYNC_VERSION) {
+          console.warn('Incompatible sync version:', message.version);
+          return;
+        }
+
+        switch (message.type) {
+          case 'tournament-update':
+            if (typeof message.data === 'object' && message.data !== null) {
+              storage.saveTournament(message.data);
+              setSyncState(prev => ({
+                ...prev,
+                lastSync: message.timestamp
+              }));
+            }
+            break;
+            
+          case 'ping':
+            const pongMessage: SyncMessage = {
+              type: 'pong',
+              data: null,
+              senderId: tournamentId!,
+              timestamp: new Date().toISOString(),
+              version: SYNC_VERSION
+            };
+            dataChannel.send(JSON.stringify(pongMessage));
+            break;
+            
+          case 'pong':
+            saveSyncSession();
+            break;
+            
+          case 'peer-list':
+            if (Array.isArray(message.data)) {
+              const missingPeers = message.data.filter(
+                (id: string) => !peerConnectionsRef.current.has(id)
+              );
+              if (missingPeers.length > 0) {
+                reconnectToPeers(missingPeers);
+              }
+            }
+            break;
+
+          case 'host-status':
+            if (message.data?.hostId) {
+              setSyncState(prev => ({
+                ...prev,
+                hostId: message.data.hostId
+              }));
+              const currentSession = storage.getSyncSession(tournamentId!);
+              if (currentSession) {
+                storage.saveSyncSession({
+                  ...currentSession,
+                  hostId: message.data.hostId
+                });
+              }
+            }
+            break;
+
+          case 'offer':
+          case 'answer':
+            handleSignalingMessage(message, peerId, dataChannel);
+            break;
+        }
+      } catch (error) {
+        console.error('Failed to process message:', error);
+      }
+    };
+  }, [tournamentId, isHost, updateConnectionState, saveSyncSession]);
+
+  // Handle WebRTC signaling messages
+  const handleSignalingMessage = useCallback(async (
+    message: SyncMessage,
+    peerId: string,
+    dataChannel: RTCDataChannel
+  ) => {
+    try {
+      const peer = peerConnectionsRef.current.get(peerId);
+      if (!peer) return;
+
+      if (message.type === 'offer' && !isHost) {
+        const { sdp } = message.data;
+        await peer.connection.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
+        const answer = await peer.connection.createAnswer();
+        await peer.connection.setLocalDescription(answer);
+        
+        const answerMessage: SyncMessage = {
+          type: 'answer',
+          data: { sdp: answer.sdp },
+          senderId: tournamentId!,
+          timestamp: new Date().toISOString(),
+          version: SYNC_VERSION
+        };
+        dataChannel.send(JSON.stringify(answerMessage));
+      }
+      
+      if (message.type === 'answer' && isHost) {
+        const { sdp } = message.data;
+        await peer.connection.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }));
+        updateConnectionState();
+      }
+    } catch (error) {
+      console.error('Failed to handle signaling message:', error);
+    }
+  }, [isHost, tournamentId, updateConnectionState]);
+
   // Reconnect to peers
   const reconnectToPeers = useCallback(async (peerIds: string[]) => {
     if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
       showToast('Failed to reconnect after multiple attempts', 'error');
-      setSyncState(prev => ({
-        ...prev,
-        status: 'disconnected',
-        connectedPeers: 0
-      }));
+      cleanup();
       return;
     }
 
@@ -211,7 +373,6 @@ export function useTournamentSync(tournamentId?: string) {
           id: peerId
         });
 
-        // Store the offer for reconnection
         saveSyncSession(offer);
       }
       
@@ -223,145 +384,14 @@ export function useTournamentSync(tournamentId?: string) {
         reconnectToPeers(peerIds);
       }, RECONNECT_INTERVAL);
     }
-  }, [reconnectAttempts, updateConnectionState, showToast, saveSyncSession]);
-
-  // Setup data channel handlers
-  const setupDataChannel = (dataChannel: RTCDataChannel, peerId: string) => {
-    dataChannel.onopen = () => {
-      // Send current tournament state when connected
-      const tournament = storage.getTournament(tournamentId!);
-      if (tournament) {
-        const message: SyncMessage = {
-          type: 'tournament-update',
-          data: tournament,
-          senderId: tournamentId!,
-          timestamp: new Date().toISOString()
-        };
-        dataChannel.send(JSON.stringify(message));
-      }
-
-      // Send host status if we're the host
-      if (isHost) {
-        const hostMessage: SyncMessage = {
-          type: 'host-status',
-          data: { hostId: tournamentId },
-          senderId: tournamentId!,
-          timestamp: new Date().toISOString()
-        };
-        dataChannel.send(JSON.stringify(hostMessage));
-      }
-
-      updateConnectionState();
-    };
-    
-    dataChannel.onclose = () => {
-      updateConnectionState();
-    };
-    
-    dataChannel.onerror = (error) => {
-      console.error('DataChannel error:', error);
-      updateConnectionState();
-    };
-    
-    dataChannel.onmessage = async (event) => {
-      try {
-        const message: SyncMessage = JSON.parse(event.data);
-        
-        switch (message.type) {
-          case 'tournament-update':
-            storage.saveTournament(message.data);
-            setSyncState(prev => ({
-              ...prev,
-              lastSync: message.timestamp
-            }));
-            break;
-            
-          case 'ping':
-            // Respond to ping with pong
-            const pongMessage: SyncMessage = {
-              type: 'pong',
-              data: null,
-              senderId: tournamentId!,
-              timestamp: new Date().toISOString()
-            };
-            dataChannel.send(JSON.stringify(pongMessage));
-            break;
-            
-          case 'pong':
-            // Update last active timestamp
-            saveSyncSession();
-            break;
-            
-          case 'peer-list':
-            // Update peer list if we're missing any connections
-            const missingPeers = message.data.filter(
-              (id: string) => !peerConnectionsRef.current.has(id)
-            );
-            if (missingPeers.length > 0) {
-              reconnectToPeers(missingPeers);
-            }
-            break;
-
-          case 'host-status':
-            // Update host ID in state
-            setSyncState(prev => ({
-              ...prev,
-              hostId: message.data.hostId
-            }));
-            break;
-
-          case 'offer':
-            // Handle incoming offer
-            if (!isHost) {
-              const { sdp } = message.data;
-              const peer = peerConnectionsRef.current.get(peerId);
-              if (peer) {
-                await peer.connection.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp }));
-                const answer = await peer.connection.createAnswer();
-                await peer.connection.setLocalDescription(answer);
-                
-                // Send answer back
-                const answerMessage: SyncMessage = {
-                  type: 'answer',
-                  data: { sdp: answer.sdp },
-                  senderId: tournamentId!,
-                  timestamp: new Date().toISOString()
-                };
-                dataChannel.send(JSON.stringify(answerMessage));
-              }
-            }
-            break;
-
-          case 'answer':
-            // Handle incoming answer
-            if (isHost) {
-              const { sdp } = message.data;
-              const peer = peerConnectionsRef.current.get(peerId);
-              if (peer) {
-                await peer.connection.setRemoteDescription(new RTCSessionDescription({ type: 'answer', sdp }));
-                updateConnectionState();
-              }
-            }
-            break;
-        }
-      } catch (error) {
-        console.error('Failed to process message:', error);
-      }
-    };
-  };
+  }, [reconnectAttempts, updateConnectionState, showToast, saveSyncSession, setupDataChannel, cleanup]);
 
   // Create a new sync session
-  const createSyncSession = async () => {
+  const createSyncSession = useCallback(async () => {
     if (!tournamentId) return;
     
     try {
-      // First, cleanup any existing session
-      storage.deleteSyncSession(tournamentId);
-      peerConnectionsRef.current.forEach(peer => {
-        peer.connection.close();
-        peer.dataChannel.close();
-      });
-      peerConnectionsRef.current.clear();
+      cleanup();
 
       setSyncState(prev => ({
         ...prev,
@@ -386,7 +416,6 @@ export function useTournamentSync(tournamentId?: string) {
         id: sessionId
       });
 
-      // Store the session with the offer
       const session: SyncSession = {
         id: tournamentId,
         isHost: true,
@@ -404,41 +433,39 @@ export function useTournamentSync(tournamentId?: string) {
         hostId: tournamentId
       }));
 
+      connectionTimeoutRef.current = setTimeout(() => {
+        if (syncState.status === 'connecting') {
+          showToast('Failed to establish connection', 'error');
+          cleanup();
+        }
+      }, CONNECTION_TIMEOUT);
+
       updateConnectionState();
-      showToast('Sync session created! Share the tournament ID with others to sync.', 'success');
+      showToast('Creating sync session...', 'info');
     } catch (error) {
       console.error('Failed to create sync session:', error);
-      showToast('Failed to create sync session.', 'error');
-      setSyncState(prev => ({
-        ...prev,
-        status: 'disconnected'
-      }));
+      showToast('Failed to create sync session', 'error');
+      cleanup();
     }
-  };
+  }, [tournamentId, cleanup, updateConnectionState, showToast, setupDataChannel, syncState.status]);
 
   // Join an existing sync session
-  const joinSyncSession = async () => {
+  const joinSyncSession = useCallback(async () => {
     if (!tournamentId) return;
     
     try {
+      cleanup();
+
       setSyncState(prev => ({
         ...prev,
         status: 'connecting'
       }));
 
-      // Get the host's session info
       const session = storage.getSyncSession(tournamentId);
       
       if (!session?.offer || !session?.hostId || !session.isHost) {
         throw new Error('No active host session found');
       }
-
-      // First, cleanup any existing connections
-      peerConnectionsRef.current.forEach(peer => {
-        peer.connection.close();
-        peer.dataChannel.close();
-      });
-      peerConnectionsRef.current.clear();
 
       const peerConnection = new RTCPeerConnection({
         iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
@@ -448,16 +475,13 @@ export function useTournamentSync(tournamentId?: string) {
         setupDataChannel(event.channel, tournamentId);
       };
       
-      // Set the host's offer
       await peerConnection.setRemoteDescription(new RTCSessionDescription(session.offer));
-      
-      // Create and set answer
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
       
       peerConnectionsRef.current.set(tournamentId, {
         connection: peerConnection,
-        dataChannel: null as any, // Will be set in ondatachannel
+        dataChannel: null as any,
         id: tournamentId
       });
 
@@ -467,7 +491,6 @@ export function useTournamentSync(tournamentId?: string) {
         hostId: session.hostId
       }));
       
-      // Save our session state
       const clientSession: SyncSession = {
         id: tournamentId,
         isHost: false,
@@ -478,50 +501,62 @@ export function useTournamentSync(tournamentId?: string) {
       };
       storage.saveSyncSession(clientSession);
 
+      connectionTimeoutRef.current = setTimeout(() => {
+        if (syncState.status === 'connecting') {
+          showToast('Failed to connect to host', 'error');
+          cleanup();
+        }
+      }, CONNECTION_TIMEOUT);
+
       updateConnectionState();
-      showToast('Successfully joined sync session!', 'success');
+      showToast('Connecting to sync session...', 'info');
     } catch (error) {
       console.error('Failed to join sync session:', error);
       showToast('Failed to join sync session. Make sure a host has created the session.', 'error');
-      setSyncState(prev => ({
-        ...prev,
-        status: 'disconnected'
-      }));
+      cleanup();
     }
-  };
+  }, [tournamentId, cleanup, updateConnectionState, showToast, setupDataChannel, syncState.status]);
 
   // Broadcast tournament updates
-  const broadcastUpdate = (tournament: Tournament) => {
-    // Broadcast to other tabs
-    broadcastChannelRef.current?.postMessage({
-      type: 'tournament-update',
-      tournament
-    });
-    
-    // Broadcast to connected peers
-    const message: SyncMessage = {
-      type: 'tournament-update',
-      data: tournament,
-      senderId: tournamentId!,
-      timestamp: new Date().toISOString()
-    };
-    
-    peerConnectionsRef.current.forEach(({ dataChannel }) => {
-      if (dataChannel.readyState === 'open') {
-        dataChannel.send(JSON.stringify(message));
-      }
-    });
+  const broadcastUpdate = useCallback((tournament: Tournament) => {
+    if (!tournamentId || !isConnected) return;
 
-    setSyncState(prev => ({
-      ...prev,
-      lastSync: new Date().toISOString()
-    }));
-  };
+    try {
+      // Broadcast to other tabs
+      broadcastChannelRef.current?.postMessage({
+        type: 'tournament-update',
+        tournament
+      });
+      
+      // Broadcast to connected peers
+      const message: SyncMessage = {
+        type: 'tournament-update',
+        data: tournament,
+        senderId: tournamentId,
+        timestamp: new Date().toISOString(),
+        version: SYNC_VERSION
+      };
+      
+      peerConnectionsRef.current.forEach(({ dataChannel }) => {
+        if (dataChannel.readyState === 'open') {
+          dataChannel.send(JSON.stringify(message));
+        }
+      });
+
+      setSyncState(prev => ({
+        ...prev,
+        lastSync: new Date().toISOString()
+      }));
+    } catch (error) {
+      console.error('Failed to broadcast update:', error);
+    }
+  }, [tournamentId, isConnected]);
 
   return {
     createSyncSession,
     joinSyncSession,
     broadcastUpdate,
+    cleanup,
     isHost,
     isConnected,
     syncState
