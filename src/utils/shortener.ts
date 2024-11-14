@@ -1,122 +1,111 @@
 import { Tournament, Team, Fixture, ScoringType, PointsConfig } from '../types/tournament';
-import { compress, decompress } from 'lz-string';
 
-// Use URL-safe base64 instead of custom base85 for better reliability
-function encodeUrlSafe(data: Uint8Array): string {
-  return btoa(String.fromCharCode(...data))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '');
-}
-
-function decodeUrlSafe(str: string): Uint8Array {
-  str = str.replace(/-/g, '+').replace(/_/g, '/');
-  while (str.length % 4) str += '=';
-  const binary = atob(str);
-  return Uint8Array.from(binary, c => c.charCodeAt(0));
-}
-
-// Encrypt data using XOR with a secure key derivation
-function encrypt(data: string, key: string): string {
-  const keyHash = Array.from(key).reduce((hash, char, i) => {
-    return hash + char.charCodeAt(0) * (i + 1);
-  }, 0);
-  
-  const dataBytes = new TextEncoder().encode(data);
-  const result = new Uint8Array(dataBytes.length);
-  
-  for (let i = 0; i < dataBytes.length; i++) {
-    const keyByte = (keyHash * (i + 1)) & 0xFF;
-    result[i] = dataBytes[i] ^ keyByte;
+// Simple base64 encoding with URL-safe chars
+function encode(obj: any): string {
+  try {
+    const json = JSON.stringify(obj);
+    return btoa(json).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  } catch (error) {
+    console.error('Encode error:', error);
+    throw new Error('Failed to encode data');
   }
-  
-  return encodeUrlSafe(result);
 }
 
-function decrypt(encoded: string, key: string): string {
-  const keyHash = Array.from(key).reduce((hash, char, i) => {
-    return hash + char.charCodeAt(0) * (i + 1);
-  }, 0);
-  
-  const dataBytes = decodeUrlSafe(encoded);
-  const result = new Uint8Array(dataBytes.length);
-  
-  for (let i = 0; i < dataBytes.length; i++) {
-    const keyByte = (keyHash * (i + 1)) & 0xFF;
-    result[i] = dataBytes[i] ^ keyByte;
+function decode(str: string): any {
+  try {
+    str = str.replace(/-/g, '+').replace(/_/g, '/');
+    while (str.length % 4) str += '=';
+    return JSON.parse(atob(str));
+  } catch (error) {
+    console.error('Decode error:', error);
+    throw new Error('Failed to decode data');
   }
-  
-  return new TextDecoder().decode(result);
 }
 
-// Compact binary format for tournament data
 function compactTournament(t: Tournament): any {
+  // Super compact format - single letter keys
   return {
-    v: 2, // version
+    v: 6, // version
     i: t.id,
     n: t.name,
     p: t.phase === 'SINGLE' ? 0 : 1,
-    c: {
-      t: t.pointsConfig.type === 'WIN_LOSS' ? 0 : 1, // 0 for WIN_LOSS, 1 for POINTS
-      w: t.pointsConfig.win,
-      l: t.pointsConfig.loss,
-      d: t.pointsConfig.draw // only included for POINTS type
-    },
-    t: t.teams.map(team => ({
-      i: team.id,
-      n: team.name,
-      s: team.status === 'ACTIVE' ? 0 : 1,
-      p: team.played,
-      w: team.won
-    })),
-    f: t.fixtures.map(fix => ({
-      i: fix.id,
-      h: fix.homeTeamId,
-      a: fix.awayTeamId,
-      s: fix.homeScore,
-      r: fix.awayScore,
-      w: fix.winner, // winner ID for WIN_LOSS type
-      p: fix.played ? 1 : 0,
-      m: fix.phase === 'HOME' ? 0 : 1
-    }))
+    s: t.pointsConfig.type === 'WIN_LOSS' ? [t.pointsConfig.win, t.pointsConfig.loss] :
+         [t.pointsConfig.win, t.pointsConfig.loss, t.pointsConfig.draw],
+    t: t.teams.map(team => [
+      team.id,
+      team.name,
+      team.status === 'ACTIVE' ? 1 : 0,
+      team.played,
+      team.won
+    ]),
+    f: t.fixtures.map(fix => {
+      const base = [
+        fix.id,
+        fix.homeTeamId,
+        fix.awayTeamId,
+        fix.played ? 1 : 0,
+        fix.phase === 'HOME' ? 0 : 1
+      ];
+      if (t.pointsConfig.type === 'POINTS') {
+        return [...base, fix.homeScore, fix.awayScore];
+      }
+      return [...base, fix.winner];
+    })
   };
 }
 
 function expandTournament(c: any): Tournament {
-  if (c.v !== 2) throw new Error('Unsupported version');
+  if (!c || typeof c !== 'object' || c.v !== 6) {
+    throw new Error('Invalid tournament data');
+  }
 
   const now = new Date().toISOString();
-  const scoringType: ScoringType = c.c.t === 0 ? 'WIN_LOSS' : 'POINTS';
+  const isPoints = c.s.length > 2;
   
-  const pointsConfig: PointsConfig = {
-    type: scoringType,
-    win: c.c.w,
-    loss: c.c.l,
-    ...(scoringType === 'POINTS' && c.c.d !== undefined ? { draw: c.c.d } : {})
+  const pointsConfig: PointsConfig = isPoints ? {
+    type: 'POINTS',
+    win: c.s[0],
+    loss: c.s[1],
+    draw: c.s[2]
+  } : {
+    type: 'WIN_LOSS',
+    win: c.s[0],
+    loss: c.s[1]
   };
-  
+
   const teams: Team[] = c.t.map((t: any) => ({
-    id: t.i,
-    name: t.n,
-    status: t.s === 0 ? 'ACTIVE' : 'WITHDRAWN',
-    played: t.p,
-    won: t.w,
-    lost: t.p - t.w,
-    points: t.w * c.c.w + (t.p - t.w) * c.c.l
+    id: t[0],
+    name: t[1],
+    status: t[2] === 1 ? 'ACTIVE' : 'WITHDRAWN',
+    played: t[3],
+    won: t[4],
+    lost: t[3] - t[4],
+    points: calculatePoints(t[4], t[3], pointsConfig)
   }));
 
-  const fixtures: Fixture[] = c.f.map((f: any) => ({
-    id: f.i,
-    homeTeamId: f.h,
-    awayTeamId: f.a,
-    homeScore: f.s,
-    awayScore: f.r,
-    winner: f.w, // winner ID for WIN_LOSS type
-    played: f.p === 1,
-    phase: f.m === 0 ? 'HOME' : 'AWAY',
-    date: now,
-    datePlayed: now
-  }));
+  const fixtures: Fixture[] = c.f.map((f: any) => {
+    const base = {
+      id: f[0],
+      homeTeamId: f[1],
+      awayTeamId: f[2],
+      played: f[3] === 1,
+      phase: f[4] === 0 ? 'HOME' : 'AWAY',
+      datePlayed: now,
+      date: now
+    };
+
+    if (isPoints) {
+      return {
+        ...base,
+        homeScore: f[5],
+        awayScore: f[6]
+      };
+    }
+    return {
+      ...base,
+      winner: f[5]
+    };
+  });
 
   return {
     id: c.i,
@@ -130,46 +119,37 @@ function expandTournament(c: any): Tournament {
   };
 }
 
-const ENCRYPTION_KEY = 'RnB_v2_2023';
+function calculatePoints(wins: number, played: number, config: PointsConfig): number {
+  const losses = played - wins;
+  
+  if (config.type === 'WIN_LOSS') {
+    return wins * config.win + losses * config.loss;
+  }
+  
+  const draws = config.draw !== undefined ? 
+    played - wins - losses : 0;
+  
+  return wins * config.win + 
+         losses * config.loss + 
+         (config.draw ? draws * config.draw : 0);
+}
 
 export function encodeTournament(tournament: Tournament): string {
   try {
-    // Convert to compact format
     const compact = compactTournament(tournament);
-    
-    // Stringify and compress
-    const json = JSON.stringify(compact);
-    const compressed = compress(json);
-    
-    if (!compressed) throw new Error('Compression failed');
-    
-    // Encrypt
-    return encrypt(compressed, ENCRYPTION_KEY);
+    return encode(compact);
   } catch (error) {
-    console.error('Encode error:', error);
+    console.error('Tournament encode error:', error);
     throw new Error('Failed to encode tournament data');
   }
 }
 
 export function decodeTournament(code: string): Tournament {
   try {
-    // Decrypt
-    const compressed = decrypt(code, ENCRYPTION_KEY);
-    
-    // Decompress
-    const json = decompress(compressed);
-    if (!json) throw new Error('Decompression failed');
-    
-    // Parse and validate
-    const data = JSON.parse(json);
-    if (!data || typeof data !== 'object') {
-      throw new Error('Invalid data format');
-    }
-    
-    // Expand to full tournament
+    const data = decode(code);
     return expandTournament(data);
   } catch (error) {
-    console.error('Decode error:', error);
+    console.error('Tournament decode error:', error);
     throw new Error('Failed to decode tournament data');
   }
 }

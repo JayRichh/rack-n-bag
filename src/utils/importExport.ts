@@ -23,9 +23,8 @@ export function exportTournament(tournament: Tournament): string {
 
 export function downloadTournamentFile(tournament: Tournament) {
   try {
-    // Create a full export with metadata
     const data = {
-      version: 2,
+      version: 6,
       type: 'tournament_export',
       timestamp: new Date().toISOString(),
       data: tournament
@@ -39,7 +38,6 @@ export function downloadTournamentFile(tournament: Tournament) {
     link.href = url;
     link.download = `${tournament.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${tournament.id.slice(0, 8)}.json`;
     
-    // Safely handle download
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -62,14 +60,12 @@ export async function copyTournamentToClipboard(tournament: Tournament): Promise
 
 export async function importFromClipboardText(text: string): Promise<Tournament> {
   try {
-    // Remove whitespace and non-printable characters
-    const sanitizedText = text.trim().replace(/[\x00-\x1F\x7F-\x9F]/g, '');
+    const sanitizedText = text.trim();
     
     if (!sanitizedText) {
-      throw new ImportError('Empty or invalid clipboard data', 'INVALID_DATA');
+      throw new ImportError('Empty clipboard data', 'INVALID_DATA');
     }
 
-    // Check if it's a share code
     if (VALID_SHARE_CODE_REGEX.test(sanitizedText)) {
       try {
         return decodeTournament(sanitizedText);
@@ -79,25 +75,20 @@ export async function importFromClipboardText(text: string): Promise<Tournament>
       }
     }
 
-    // Try parsing as JSON
     try {
       const parsed = JSON.parse(sanitizedText);
       
-      // Handle full export format
-      if (parsed.version === 2 && parsed.type === 'tournament_export' && parsed.data) {
+      if (parsed.version && parsed.type === 'tournament_export' && parsed.data) {
         return validateAndNormalizeTournament(parsed.data);
       }
       
-      // Try parsing as direct tournament data
       return validateAndNormalizeTournament(parsed);
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
       throw new ImportError('Invalid tournament data format', 'PARSE_FAILED');
     }
   } catch (error) {
-    if (error instanceof ImportError) {
-      throw error;
-    }
+    if (error instanceof ImportError) throw error;
     console.error('Import error:', error);
     throw new ImportError('Failed to import tournament data', 'IMPORT_FAILED');
   }
@@ -162,7 +153,6 @@ function validateAndNormalizeTournament(data: any): Tournament {
       throw new Error('Invalid tournament data structure');
     }
 
-    // Ensure required fields exist
     const requiredFields = ['id', 'name', 'teams', 'fixtures'];
     for (const field of requiredFields) {
       if (!data[field]) {
@@ -170,62 +160,77 @@ function validateAndNormalizeTournament(data: any): Tournament {
       }
     }
 
-    // Validate arrays
     if (!Array.isArray(data.teams) || !Array.isArray(data.fixtures)) {
       throw new Error('Teams and fixtures must be arrays');
     }
 
     const now = new Date().toISOString();
-
-    // Determine scoring type and validate points config
     const scoringType: ScoringType = ['WIN_LOSS', 'POINTS'].includes(data.pointsConfig?.type) 
       ? data.pointsConfig.type 
       : 'WIN_LOSS';
 
-    // Set appropriate default points based on scoring type
     const pointsConfig: PointsConfig = {
       type: scoringType,
       win: Number(data.pointsConfig?.win) || (scoringType === 'WIN_LOSS' ? 1 : 3),
-      loss: Number(data.pointsConfig?.loss) || 0
+      loss: Number(data.pointsConfig?.loss) || 0,
+      ...(scoringType === 'POINTS' && data.pointsConfig?.draw !== undefined && {
+        draw: Number(data.pointsConfig.draw)
+      })
     };
 
-    // Only include draw points for POINTS scoring type
-    if (scoringType === 'POINTS' && data.pointsConfig?.draw !== undefined) {
-      pointsConfig.draw = Number(data.pointsConfig.draw);
-    }
+    const teams = data.teams.map((team: any, index: number) => ({
+      id: String(team.id || `t${index}`),
+      name: String(team.name || `Team ${index + 1}`),
+      status: team.status === 'WITHDRAWN' ? 'WITHDRAWN' : 'ACTIVE',
+      played: Math.max(0, Number(team.played) || 0),
+      won: Math.max(0, Number(team.won) || 0),
+      lost: Math.max(0, Number(team.played || 0) - Number(team.won || 0)),
+      points: calculatePoints(
+        Math.max(0, Number(team.won) || 0),
+        Math.max(0, Number(team.played) || 0),
+        pointsConfig
+      )
+    }));
 
-    // Normalize and validate the tournament data
-    const tournament: Tournament = {
-      id: String(data.id),
-      name: String(data.name),
-      phase: ['SINGLE', 'HOME_AND_AWAY'].includes(data.phase) ? data.phase : 'SINGLE',
-      pointsConfig,
-      teams: data.teams.map((team: any, index: number) => ({
-        id: String(team.id || `t${index}`),
-        name: String(team.name || `Team ${index + 1}`),
-        status: team.status === 'WITHDRAWN' ? 'WITHDRAWN' : 'ACTIVE',
-        played: Math.max(0, Number(team.played) || 0),
-        won: Math.max(0, Number(team.won) || 0),
-        lost: Math.max(0, Number(team.lost) || 0),
-        points: Math.max(0, Number(team.points) || 0)
-      })),
-      fixtures: data.fixtures.map((fixture: any, index: number) => ({
+    const fixtures = data.fixtures.map((fixture: any, index: number) => {
+      const base = {
         id: String(fixture.id || `f${index}`),
         homeTeamId: String(fixture.homeTeamId),
         awayTeamId: String(fixture.awayTeamId),
-        homeScore: fixture.homeScore !== undefined ? Math.max(0, Number(fixture.homeScore)) : undefined,
-        awayScore: fixture.awayScore !== undefined ? Math.max(0, Number(fixture.awayScore)) : undefined,
-        winner: fixture.winner,
         played: Boolean(fixture.played),
         phase: fixture.phase === 'AWAY' ? 'AWAY' : 'HOME',
         date: fixture.date || now,
         datePlayed: fixture.datePlayed || now
-      })),
+      };
+
+      if (scoringType === 'POINTS') {
+        return {
+          ...base,
+          ...(fixture.homeScore !== undefined && { 
+            homeScore: Math.max(0, Number(fixture.homeScore))
+          }),
+          ...(fixture.awayScore !== undefined && { 
+            awayScore: Math.max(0, Number(fixture.awayScore))
+          })
+        };
+      } else {
+        return {
+          ...base,
+          ...(fixture.winner && { winner: String(fixture.winner) })
+        };
+      }
+    });
+
+    return {
+      id: String(data.id),
+      name: String(data.name),
+      phase: ['SINGLE', 'HOME_AND_AWAY'].includes(data.phase) ? data.phase : 'SINGLE',
+      pointsConfig,
+      teams,
+      fixtures,
       dateCreated: data.dateCreated || now,
       dateModified: now
     };
-
-    return tournament;
   } catch (error) {
     console.error('Validation error:', error);
     throw new ImportError(
@@ -233,4 +238,19 @@ function validateAndNormalizeTournament(data: any): Tournament {
       'VALIDATION_FAILED'
     );
   }
+}
+
+function calculatePoints(wins: number, played: number, config: PointsConfig): number {
+  const losses = played - wins;
+  
+  if (config.type === 'WIN_LOSS') {
+    return wins * config.win + losses * config.loss;
+  }
+  
+  const draws = config.draw !== undefined ? 
+    played - wins - losses : 0;
+  
+  return wins * config.win + 
+         losses * config.loss + 
+         (config.draw ? draws * config.draw : 0);
 }
