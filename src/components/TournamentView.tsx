@@ -11,11 +11,13 @@ import { TournamentHeader, ViewMode } from './tournament/TournamentHeader';
 import { TournamentSettings } from './tournament/TournamentSettings';
 import { TournamentPreferences } from './tournament/TournamentPreferences';
 import { TournamentTable } from './tournament/TournamentTable';
+import { TournamentSync } from './tournament/TournamentSync';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { containers } from '../lib/design-system';
 import { useGlobalSettings } from '../hooks/useGlobalSettings';
 import { useToast } from './ToastContext';
 import { ScrollToTop } from './ui/ScrollToTop';
+import { useTournamentSync } from '../hooks/useTournamentSync';
 
 interface TournamentViewProps {
   tournament: Tournament;
@@ -43,6 +45,7 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
   const searchParams = useSearchParams();
   const { getAnimationConfig, updateSettings: updateGlobalSettings, settings: globalSettings } = useGlobalSettings();
   const { showToast } = useToast();
+  const { broadcastUpdate } = useTournamentSync(tournament.id);
 
   const calculatePlayerStats = useCallback((
     teams: Team[],
@@ -112,6 +115,7 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
 
   const [showSettings, setShowSettings] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
+  const [showSync, setShowSync] = useState(false);
   const [selectedPlayerId, setSelectedPlayerId] = useState<string>('');
   const [settings, setSettings] = useState<Settings>(defaultTournamentSettings);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -245,12 +249,14 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
 
       setCurrentTournament(updatedTournament);
       storage.saveTournament(updatedTournament);
+      // Broadcast update to synced peers
+      broadcastUpdate(updatedTournament);
       showToast('Match result updated successfully', 'success');
     } catch (error) {
       console.error('Failed to update fixture:', error);
       showToast('Failed to update match result', 'error');
     }
-  }, [currentTournament, showToast, calculatePlayerStats]);
+  }, [currentTournament, showToast, calculatePlayerStats, broadcastUpdate]);
 
   const handleViewModeChange = useCallback((mode: ViewMode) => {
     const current = new URLSearchParams(Array.from(searchParams.entries()));
@@ -278,13 +284,21 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
             onSettingsToggle={() => {
               setShowSettings(!showSettings);
               setShowPreferences(false);
+              setShowSync(false);
             }}
             onPreferencesToggle={() => {
               setShowPreferences(!showPreferences);
               setShowSettings(false);
+              setShowSync(false);
+            }}
+            onSyncToggle={() => {
+              setShowSync(!showSync);
+              setShowSettings(false);
+              setShowPreferences(false);
             }}
             showSettings={showSettings}
             showPreferences={showPreferences}
+            showSync={showSync}
             onEdit={onEdit}
             onBack={onBack}
             selectedPlayerId={selectedPlayerId}
@@ -295,7 +309,7 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
 
       {/* Settings Panel */}
       <AnimatePresence>
-        {(showSettings || showPreferences) && (
+        {(showSettings || showPreferences || showSync) && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
@@ -325,6 +339,8 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
 
                       setCurrentTournament(finalTournament);
                       storage.saveTournament(finalTournament);
+                      // Broadcast update to synced peers
+                      broadcastUpdate(finalTournament);
                       showToast('Tournament settings saved', 'success');
                     } catch (error) {
                       console.error('Failed to save tournament settings:', error);
@@ -342,6 +358,10 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
                   showSettings={showPreferences}
                   onClose={() => setShowPreferences(false)}
                 />
+              )}
+
+              {showSync && (
+                <TournamentSync tournamentId={tournament.id} />
               )}
             </div>
           </motion.div>

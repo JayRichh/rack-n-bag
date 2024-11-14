@@ -3,7 +3,7 @@
 import { motion } from 'framer-motion';
 import { Tournament } from '../../types/tournament';
 import { ParticipantSelector } from '../ParticipantSelector';
-import { Settings, ArrowLeft, Edit, Grid, BarChart2, Table2, Sliders, Eye, Cog } from 'lucide-react';
+import { Settings, ArrowLeft, Edit, Grid, BarChart2, Table2, Sliders, Eye, Cog, Globe, Wifi } from 'lucide-react';
 import { typography } from '../../lib/design-system';
 import * as Tooltip from '@radix-ui/react-tooltip';
 
@@ -15,8 +15,10 @@ export interface TournamentHeaderProps {
   onViewModeChange: (mode: ViewMode) => void;
   onSettingsToggle: () => void;
   onPreferencesToggle: () => void;
+  onSyncToggle: () => void;
   showSettings: boolean;
   showPreferences: boolean;
+  showSync: boolean;
   onEdit: () => void;
   onBack: () => void;
   selectedPlayerId: string;
@@ -29,8 +31,10 @@ export function TournamentHeader({
   onViewModeChange,
   onSettingsToggle,
   onPreferencesToggle,
+  onSyncToggle,
   showSettings,
   showPreferences,
+  showSync,
   onEdit,
   onBack,
   selectedPlayerId,
@@ -142,6 +146,14 @@ export function TournamentHeader({
         </div>
 
         <div className="flex items-center gap-2">
+          <ActionButton
+            icon={Globe}
+            label="Real-time Sync"
+            onClick={onSyncToggle}
+            isActive={showSync}
+            tooltip="Enable real-time sync with other participants"
+          />
+
           <ActionButton
             icon={Eye}
             label="View Options"
