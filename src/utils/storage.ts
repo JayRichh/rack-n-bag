@@ -150,10 +150,24 @@ class SafeStorage {
 const safeLocalStorage = new SafeStorage('localStorage');
 
 if (typeof window !== 'undefined') {
-  const existingTournaments = safeLocalStorage.getItem<Tournament[]>('tournaments', []);
-  if (existingTournaments.length === 0) {
+  const firstAccessDate = safeLocalStorage.getItem<string>('first_access_date', '');
+  const nov15th2024 = new Date('2024-11-15').getTime();
+  const currentDate = new Date().getTime();
+
+  if (!firstAccessDate) {
+    // First time user - set first access date and load test data
+    safeLocalStorage.setItem('first_access_date', new Date().toISOString());
     const defaultTournaments = Object.values(testTournaments);
     safeLocalStorage.setItem('tournaments', defaultTournaments);
+  } else if (currentDate >= nov15th2024 && new Date(firstAccessDate).getTime() < nov15th2024) {
+    // User who accessed before Nov 15th 2024, accessing for first time after that date
+    // Clear their storage and load fresh test data
+    Object.keys(window.localStorage).forEach(key => {
+      window.localStorage.removeItem(key);
+    });
+    const defaultTournaments = Object.values(testTournaments);
+    safeLocalStorage.setItem('tournaments', defaultTournaments);
+    safeLocalStorage.setItem('first_access_date', new Date().toISOString());
   }
 }
 
