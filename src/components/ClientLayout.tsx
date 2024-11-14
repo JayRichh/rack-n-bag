@@ -8,7 +8,7 @@ import { Loader2 } from 'lucide-react';
 import { useEffect } from 'react';
 import { ToastProvider } from './ToastContext';
 import { Footer } from './Footer';
-import { layout } from '../lib/design-system';
+import { layout, containers } from '../lib/design-system';
 
 export function ClientLayout({
   children,
@@ -62,7 +62,7 @@ export function ClientLayout({
     <Tooltip.Provider delayDuration={settings.lowMotion ? 0 : 200}>
       <ToastProvider>
         {/* Root container with dynamic viewport height */}
-        <div className={`${layout.pageWrapper} min-h-[100dvh] flex flex-col`}>
+        <div className={`${containers.wrapper} min-h-[100dvh] flex flex-col`}>
           {/* Navigation Progress Indicator */}
           {!settings.lowMotion && (
             <motion.div

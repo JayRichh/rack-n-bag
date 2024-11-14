@@ -55,9 +55,13 @@ export const defaultTournamentSettings: TournamentSettings = {
 export interface GlobalSettings {
   theme: 'light' | 'dark' | 'system';
   lowMotion: boolean;
+  notifications: boolean;
 }
 
 export const defaultGlobalSettings: GlobalSettings = {
   theme: 'system',
-  lowMotion: false
+  lowMotion: false,
+  notifications: true
 };
+
+export type SettingsUpdatePayload = Partial<GlobalSettings>;
