@@ -1,8 +1,8 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useTournamentSync } from '../../hooks/useTournamentSync';
 import { typography } from '../../lib/design-system';
 import * as Tooltip from '@radix-ui/react-tooltip';
+import { useSyncContext } from '../SyncContext';
 import { 
   Globe,
   Link,
@@ -14,7 +14,9 @@ import {
   Crown,
   Clock,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  X,
+  Signal
 } from 'lucide-react';
 
 interface SyncSectionProps {
@@ -62,19 +64,60 @@ function SyncSection({ title, icon: Icon, children, tooltip }: SyncSectionProps)
   );
 }
 
-export function TournamentSync({ tournamentId }: { tournamentId: string }) {
+function ConnectionDetails({ syncState }: { syncState: any }) {
+  const getIceStateColor = () => {
+    switch (syncState.iceConnectionState) {
+      case 'connected':
+        return 'emerald';
+      case 'checking':
+        return 'yellow';
+      case 'failed':
+        return 'red';
+      default:
+        return 'gray';
+    }
+  };
+
+  const getSignalingStateColor = () => {
+    switch (syncState.signalingState) {
+      case 'stable':
+        return 'emerald';
+      case 'have-local-offer':
+      case 'have-remote-offer':
+        return 'yellow';
+      case 'closed':
+        return 'red';
+      default:
+        return 'gray';
+    }
+  };
+
+  return (
+    <div className="mt-4 space-y-2 text-sm">
+      {syncState.iceConnectionState && (
+        <div className={`flex items-center gap-2 text-${getIceStateColor()}-500`}>
+          <Signal className="w-4 h-4" />
+          <span>ICE: {syncState.iceConnectionState}</span>
+        </div>
+      )}
+      {syncState.signalingState && (
+        <div className={`flex items-center gap-2 text-${getSignalingStateColor()}-500`}>
+          <Signal className="w-4 h-4" />
+          <span>Signaling: {syncState.signalingState}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function TournamentSync() {
   const { 
     createSyncSession, 
-    joinSyncSession, 
+    joinSyncSession,
+    cleanup,
     isHost, 
-    syncState,
-    cleanup 
-  } = useTournamentSync(tournamentId);
-
-  // Ensure cleanup on unmount
-  useEffect(() => {
-    return () => cleanup();
-  }, [cleanup]);
+    syncState 
+  } = useSyncContext();
 
   const getStatusColor = () => {
     if (syncState.error) return 'red';
@@ -122,6 +165,7 @@ export function TournamentSync({ tournamentId }: { tournamentId: string }) {
   };
 
   const isTransitioning = syncState.status === 'connecting';
+  const isConnected = syncState.status === 'connected' || syncState.status === 'host';
 
   return (
     <div className="py-6">
@@ -179,12 +223,24 @@ export function TournamentSync({ tournamentId }: { tournamentId: string }) {
                         'Waiting for participants to join...'
                       )}
                     </p>
+                    {(isConnected || syncState.status === 'connecting') && (
+                      <ConnectionDetails syncState={syncState} />
+                    )}
                   </div>
                   {!syncState.error && syncState.lastSync && (
                     <div className="flex items-center gap-2 text-sm text-gray-500">
                       <Clock className="w-4 h-4" />
                       <span>Last sync: {new Date(syncState.lastSync).toLocaleTimeString()}</span>
                     </div>
+                  )}
+                  {isConnected && (
+                    <button
+                      onClick={cleanup}
+                      className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors rounded-full hover:bg-gray-100 dark:hover:bg-gray-800"
+                      title="Disconnect"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
                   )}
                 </>
               ) : (
@@ -255,6 +311,24 @@ export function TournamentSync({ tournamentId }: { tournamentId: string }) {
               </div>
             </div>
           </SyncSection>
+        )}
+
+        {/* Error Message */}
+        {syncState.error && (
+          <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
+            <div className="flex gap-3">
+              <AlertCircle className="w-5 h-5 text-red-500 dark:text-red-400 flex-shrink-0 mt-0.5" />
+              <div className="space-y-2 text-sm text-red-600 dark:text-red-300">
+                <p>
+                  {syncState.error}
+                </p>
+                <p>
+                  Please try disconnecting and connecting again. If the problem persists,
+                  try refreshing the page.
+                </p>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Help Text */}

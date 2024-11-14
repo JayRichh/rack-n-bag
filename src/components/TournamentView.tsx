@@ -17,7 +17,7 @@ import { containers } from '../lib/design-system';
 import { useGlobalSettings } from '../hooks/useGlobalSettings';
 import { useToast } from './ToastContext';
 import { ScrollToTop } from './ui/ScrollToTop';
-import { useTournamentSync } from '../hooks/useTournamentSync';
+import { useSyncContext } from './SyncContext';
 
 interface TournamentViewProps {
   tournament: Tournament;
@@ -45,7 +45,7 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
   const searchParams = useSearchParams();
   const { getAnimationConfig, updateSettings: updateGlobalSettings, settings: globalSettings } = useGlobalSettings();
   const { showToast } = useToast();
-  const { broadcastUpdate } = useTournamentSync(tournament.id);
+  const { broadcastUpdate } = useSyncContext();
 
   const calculatePlayerStats = useCallback((
     teams: Team[],
@@ -360,9 +360,7 @@ export function TournamentView({ tournament, onEdit, onBack }: TournamentViewPro
                 />
               )}
 
-              {showSync && (
-                <TournamentSync tournamentId={tournament.id} />
-              )}
+              {showSync && <TournamentSync />}
             </div>
           </motion.div>
         )}

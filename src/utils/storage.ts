@@ -27,10 +27,7 @@ class SafeStorage {
   constructor(type: StorageType) {
     this.type = type;
     if (typeof window !== 'undefined') {
-      // Listen for storage events from other tabs/windows
       window.addEventListener('storage', this.handleStorageEvent);
-      
-      // Clean up expired sync sessions periodically
       setInterval(this.cleanupExpiredSessions, 60000); // Every minute
     }
   }
@@ -40,7 +37,6 @@ class SafeStorage {
 
     try {
       const newValue = event.newValue ? JSON.parse(event.newValue) : null;
-      // Notify all listeners for this key
       this.listeners.get(event.key)?.forEach(listener => listener(newValue));
     } catch (error) {
       console.warn('Failed to parse storage event value:', error);
@@ -52,9 +48,9 @@ class SafeStorage {
       const sessions = this.getItem<Record<string, SyncSession>>('tournament_sync_sessions', {});
       let hasChanges = false;
 
-      // Remove sessions older than 24 hours
+      // Remove sessions older than 5 minutes
       Object.entries(sessions).forEach(([id, session]) => {
-        if (Date.now() - new Date(session.lastActive).getTime() > 24 * 60 * 60 * 1000) {
+        if (Date.now() - new Date(session.lastActive).getTime() > 5 * 60 * 1000) {
           delete sessions[id];
           hasChanges = true;
         }
@@ -74,7 +70,6 @@ class SafeStorage {
     }
     this.listeners.get(key)!.add(callback);
 
-    // Return unsubscribe function
     return () => {
       this.listeners.get(key)?.delete(callback);
       if (this.listeners.get(key)?.size === 0) {
@@ -115,18 +110,14 @@ class SafeStorage {
     try {
       const stringValue = JSON.stringify(value);
       storage.setItem(key, stringValue);
-
-      // Notify listeners of the change
       this.listeners.get(key)?.forEach(listener => listener(value));
 
-      // If this is a theme change, update the DOM immediately
       if (key === 'settings') {
         const settings = value as Settings;
         const systemTheme = typeof window !== 'undefined' && 
           window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         const effectiveTheme = settings.theme === 'system' ? systemTheme : settings.theme;
         
-        // Update theme class and store current theme
         document.documentElement.classList.remove('light', 'dark');
         document.documentElement.classList.add(effectiveTheme);
         document.documentElement.setAttribute('data-theme', effectiveTheme);
@@ -143,7 +134,6 @@ class SafeStorage {
 
     try {
       storage.removeItem(key);
-      // Notify listeners of the removal
       this.listeners.get(key)?.forEach(listener => listener(null));
     } catch (error) {
       console.warn('Storage operation failed:', error);

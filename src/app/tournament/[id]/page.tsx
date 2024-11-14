@@ -10,6 +10,7 @@ import { containers } from '../../../lib/design-system';
 import { motion } from 'framer-motion';
 import { ErrorBoundary } from '../../../components/ErrorBoundary';
 import { Loader2 } from 'lucide-react';
+import { SyncProvider } from '../../../components/SyncContext';
 
 const pageVariants = {
   hidden: { opacity: 0 },
@@ -127,20 +128,22 @@ function TournamentPageContent() {
   }
 
   return (
-    <motion.div 
-      variants={pageVariants}
-      initial="hidden"
-      animate="show"
-      exit="exit"
-    >
-      <motion.div variants={contentVariants}>
-        <TournamentView
-          tournament={tournament}
-          onEdit={() => router.push(`/tournament/${tournament.id}/edit`)}
-          onBack={() => router.push('/')}
-        />
+    <SyncProvider tournamentId={tournament.id}>
+      <motion.div 
+        variants={pageVariants}
+        initial="hidden"
+        animate="show"
+        exit="exit"
+      >
+        <motion.div variants={contentVariants}>
+          <TournamentView
+            tournament={tournament}
+            onEdit={() => router.push(`/tournament/${tournament.id}/edit`)}
+            onBack={() => router.push('/')}
+          />
+        </motion.div>
       </motion.div>
-    </motion.div>
+    </SyncProvider>
   );
 }
 
