@@ -4,7 +4,7 @@ import { motion } from 'framer-motion';
 import { typography } from '../../lib/design-system';
 import { TournamentSettings } from '../../types/settings';
 import { Switch } from '../ui/switch';
-import { X, Eye, Target, Moon, Zap, Info } from 'lucide-react';
+import { X, Eye, Target, Moon, Zap, Info, Sun, Monitor } from 'lucide-react';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { useGlobalSettings } from '../../hooks/useGlobalSettings';
 
@@ -60,12 +60,6 @@ function PreferenceItem({ icon: Icon, label, tooltip, checked, onChange }: Prefe
 export function TournamentPreferences({ settings, onSettingChange, showSettings, onClose }: TournamentPreferencesProps) {
   const { settings: globalSettings, updateSettings } = useGlobalSettings();
 
-  const handleThemeChange = () => {
-    // Toggle between light and dark theme
-    const newTheme = globalSettings.theme === 'dark' ? 'light' : 'dark';
-    updateSettings({ theme: newTheme });
-  };
-
   return (
     <div className="py-4 space-y-4">
       <div className="flex items-center justify-between mb-6">
@@ -105,13 +99,75 @@ export function TournamentPreferences({ settings, onSettingChange, showSettings,
           onChange={() => onSettingChange('highlightMyMatches')}
         />
 
-        <PreferenceItem
-          icon={Moon}
-          label="Dark Mode"
-          tooltip="Switch between light and dark color themes"
-          checked={globalSettings.theme === 'dark'}
-          onChange={handleThemeChange}
-        />
+        <div className="py-2">
+          <div className="flex items-center gap-2 mb-3">
+            <Moon className="w-4 h-4 text-gray-400" />
+            <div className="flex items-center gap-1">
+              <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                Theme
+              </label>
+              <Tooltip.Root>
+                <Tooltip.Trigger asChild>
+                  <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                    <Info className="w-4 h-4" />
+                  </button>
+                </Tooltip.Trigger>
+                <Tooltip.Portal>
+                  <Tooltip.Content
+                    className="bg-white dark:bg-gray-800 px-3 py-2 rounded-lg shadow-lg text-sm max-w-xs"
+                    sideOffset={5}
+                  >
+                    Choose your preferred color theme
+                  </Tooltip.Content>
+                </Tooltip.Portal>
+              </Tooltip.Root>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <button
+              onClick={() => updateSettings({ theme: 'light' })}
+              className={`
+                flex items-center justify-center gap-2 p-2 rounded-lg text-sm font-medium
+                ${globalSettings.theme === 'light'
+                  ? 'bg-accent text-white'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                }
+                transition-colors
+              `}
+            >
+              <Sun className="w-4 h-4" />
+              Light
+            </button>
+            <button
+              onClick={() => updateSettings({ theme: 'dark' })}
+              className={`
+                flex items-center justify-center gap-2 p-2 rounded-lg text-sm font-medium
+                ${globalSettings.theme === 'dark'
+                  ? 'bg-accent text-white'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                }
+                transition-colors
+              `}
+            >
+              <Moon className="w-4 h-4" />
+              Dark
+            </button>
+            <button
+              onClick={() => updateSettings({ theme: 'system' })}
+              className={`
+                flex items-center justify-center gap-2 p-2 rounded-lg text-sm font-medium
+                ${globalSettings.theme === 'system'
+                  ? 'bg-accent text-white'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                }
+                transition-colors
+              `}
+            >
+              <Monitor className="w-4 h-4" />
+              System
+            </button>
+          </div>
+        </div>
 
         <PreferenceItem
           icon={Zap}

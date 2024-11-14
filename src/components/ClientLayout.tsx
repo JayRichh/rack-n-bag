@@ -17,18 +17,22 @@ export function ClientLayout({
   const { settings, getAnimationConfig, isLoaded, getThemeClass } = useGlobalSettings();
   const { pageTransition } = getAnimationConfig();
 
-  // Update theme class on html and body
+  // Update theme class on html element only
   useEffect(() => {
     if (!isLoaded) return;
 
     const themeClass = getThemeClass();
-    const elements = [document.documentElement, document.body];
-    elements.forEach(el => {
-      el.classList.remove('light', 'dark');
-      el.classList.add(themeClass);
-      // Force a repaint to ensure styles are updated
-      el.style.backgroundColor = el.style.backgroundColor;
-    });
+    const html = document.documentElement;
+    
+    // Remove existing theme classes
+    html.classList.remove('light', 'dark');
+    // Add new theme class
+    html.classList.add(themeClass);
+    // Update data-theme attribute for components that might use it
+    html.setAttribute('data-theme', themeClass);
+
+    // Store current theme for persistence across page loads
+    localStorage.setItem('current-theme', themeClass);
   }, [isLoaded, getThemeClass]);
 
   if (!isLoaded) {
@@ -55,7 +59,7 @@ export function ClientLayout({
   return (
     <Tooltip.Provider delayDuration={settings.lowMotion ? 0 : 200}>
       <ToastProvider>
-        <div className={`min-h-screen relative ${getThemeClass()}`}>
+        <div className="min-h-screen relative">
           {settings.lowMotion ? (
             <div className="flex-1 relative">
               {children}

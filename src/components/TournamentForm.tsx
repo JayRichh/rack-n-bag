@@ -3,7 +3,7 @@
 import React, { useState, Suspense } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Tournament, Team, TournamentPhase, TeamStatus } from '../types/tournament';
+import { Tournament, Team, TournamentPhase, TeamStatus, ScoringType } from '../types/tournament';
 import { storage } from '../utils/storage';
 import { typography, containers, spacing, layout } from '../lib/design-system';
 
@@ -58,12 +58,23 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
   const [name, setName] = useState(tournament?.name || '');
   const [teams, setTeams] = useState<Team[]>(tournament?.teams || []);
   const [phase, setPhase] = useState<TournamentPhase>(tournament?.phase || 'SINGLE');
+  const [scoringType, setScoringType] = useState<ScoringType>(tournament?.pointsConfig.type || 'WIN_LOSS');
   const [pointsConfig, setPointsConfig] = useState(tournament?.pointsConfig || {
-    win: 3,
-    draw: 1,
+    type: 'WIN_LOSS' as ScoringType,
+    win: 1,
     loss: 0
   });
   const [newTeamName, setNewTeamName] = useState('');
+
+  const handleScoringTypeChange = (type: ScoringType) => {
+    setScoringType(type);
+    setPointsConfig({
+      type,
+      win: type === 'WIN_LOSS' ? 1 : 3,
+      loss: 0,
+      ...(type === 'POINTS' ? { draw: 1 } : {})
+    });
+  };
 
   const handleAddTeam = () => {
     if (newTeamName.trim()) {
@@ -95,7 +106,10 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
       name: name.trim(),
       teams,
       phase,
-      pointsConfig,
+      pointsConfig: {
+        ...pointsConfig,
+        type: scoringType
+      },
       fixtures: tournament?.fixtures || [],
       dateCreated: tournament?.dateCreated || new Date().toISOString(),
       dateModified: new Date().toISOString()
@@ -163,7 +177,41 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
 
             {/* Points Configuration */}
             <motion.div variants={sectionVariants}>
-              <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100 mb-4`}>Points System</h3>
+              <h3 className={`${typography.h3} text-gray-900 dark:text-gray-100 mb-4`}>Scoring System</h3>
+              
+              {/* Scoring Type Selection */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <button
+                  type="button"
+                  onClick={() => handleScoringTypeChange('WIN_LOSS')}
+                  className={`
+                    p-4 rounded-lg border-2 text-center transition-colors
+                    ${scoringType === 'WIN_LOSS'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-primary/50'
+                    }
+                  `}
+                >
+                  <div className="font-medium">Win/Loss</div>
+                  <div className="text-xs text-gray-500 mt-1">Simple tracking</div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleScoringTypeChange('POINTS')}
+                  className={`
+                    p-4 rounded-lg border-2 text-center transition-colors
+                    ${scoringType === 'POINTS'
+                      ? 'border-primary bg-primary/10'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-primary/50'
+                    }
+                  `}
+                >
+                  <div className="font-medium">Points Based</div>
+                  <div className="text-xs text-gray-500 mt-1">Custom points</div>
+                </button>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -178,19 +226,21 @@ export function TournamentForm({ tournament, onSave, onCancel }: TournamentFormP
                     required
                   />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Draw Points
-                  </label>
-                  <input
-                    type="number"
-                    value={pointsConfig.draw}
-                    onChange={(e) => setPointsConfig({ ...pointsConfig, draw: parseInt(e.target.value) })}
-                    className="form-input"
-                    min="0"
-                    required
-                  />
-                </div>
+                {scoringType === 'POINTS' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                      Draw Points
+                    </label>
+                    <input
+                      type="number"
+                      value={pointsConfig.draw}
+                      onChange={(e) => setPointsConfig({ ...pointsConfig, draw: parseInt(e.target.value) })}
+                      className="form-input"
+                      min="0"
+                      required
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                     Loss Points

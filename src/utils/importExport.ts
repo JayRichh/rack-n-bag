@@ -1,4 +1,4 @@
-import { Tournament } from '../types/tournament';
+import { Tournament, ScoringType, PointsConfig } from '../types/tournament';
 import { encodeTournament, decodeTournament } from './shortener';
 
 // Validation constants
@@ -177,15 +177,29 @@ function validateAndNormalizeTournament(data: any): Tournament {
 
     const now = new Date().toISOString();
 
+    // Determine scoring type and validate points config
+    const scoringType: ScoringType = ['WIN_LOSS', 'POINTS'].includes(data.pointsConfig?.type) 
+      ? data.pointsConfig.type 
+      : 'WIN_LOSS';
+
+    // Set appropriate default points based on scoring type
+    const pointsConfig: PointsConfig = {
+      type: scoringType,
+      win: Number(data.pointsConfig?.win) || (scoringType === 'WIN_LOSS' ? 1 : 3),
+      loss: Number(data.pointsConfig?.loss) || 0
+    };
+
+    // Only include draw points for POINTS scoring type
+    if (scoringType === 'POINTS' && data.pointsConfig?.draw !== undefined) {
+      pointsConfig.draw = Number(data.pointsConfig.draw);
+    }
+
     // Normalize and validate the tournament data
     const tournament: Tournament = {
       id: String(data.id),
       name: String(data.name),
       phase: ['SINGLE', 'HOME_AND_AWAY'].includes(data.phase) ? data.phase : 'SINGLE',
-      pointsConfig: {
-        win: Number(data.pointsConfig?.win) || 3,
-        loss: Number(data.pointsConfig?.loss) || 0
-      },
+      pointsConfig,
       teams: data.teams.map((team: any, index: number) => ({
         id: String(team.id || `t${index}`),
         name: String(team.name || `Team ${index + 1}`),
@@ -199,8 +213,9 @@ function validateAndNormalizeTournament(data: any): Tournament {
         id: String(fixture.id || `f${index}`),
         homeTeamId: String(fixture.homeTeamId),
         awayTeamId: String(fixture.awayTeamId),
-        homeScore: Math.max(0, Number(fixture.homeScore) || 0),
-        awayScore: Math.max(0, Number(fixture.awayScore) || 0),
+        homeScore: fixture.homeScore !== undefined ? Math.max(0, Number(fixture.homeScore)) : undefined,
+        awayScore: fixture.awayScore !== undefined ? Math.max(0, Number(fixture.awayScore)) : undefined,
+        winner: fixture.winner,
         played: Boolean(fixture.played),
         phase: fixture.phase === 'AWAY' ? 'AWAY' : 'HOME',
         date: fixture.date || now,

@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { typography } from '../../lib/design-system';
-import { Tournament } from '../../types/tournament';
+import { Tournament, ScoringType } from '../../types/tournament';
 import { useState, useRef } from 'react';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { 
@@ -17,7 +17,8 @@ import {
   Upload,
   Copy,
   ClipboardPaste,
-  X
+  X,
+  Check
 } from 'lucide-react';
 import { 
   downloadTournamentFile, 
@@ -53,6 +54,17 @@ export function TournamentSettings({ tournament, onSave, onClose }: TournamentSe
     setHasChanges(false);
   };
 
+  const handleScoringTypeChange = (type: ScoringType) => {
+    setPointsConfig(prev => ({
+      ...prev,
+      type,
+      win: type === 'WIN_LOSS' ? 1 : 3,
+      loss: 0,
+      draw: type === 'WIN_LOSS' ? undefined : 1
+    }));
+    setHasChanges(true);
+  };
+
   const handlePointsChange = (type: 'win' | 'draw' | 'loss', value: number) => {
     setPointsConfig(prev => ({
       ...prev,
@@ -68,8 +80,8 @@ export function TournamentSettings({ tournament, onSave, onClose }: TournamentSe
 
   const handleReset = () => {
     setPointsConfig({
-      win: 3,
-      draw: 1,
+      type: 'WIN_LOSS',
+      win: 1,
       loss: 0
     });
     setPhase('SINGLE');
@@ -236,28 +248,95 @@ export function TournamentSettings({ tournament, onSave, onClose }: TournamentSe
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
         {/* Points System */}
         <SettingSection 
-          title="Points System" 
+          title="Scoring System" 
           icon={Trophy}
-          tooltip="Configure how points are awarded for match results"
+          tooltip="Configure how match results are tracked and scored"
         >
-          <div className="space-y-4 bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-            {Object.entries(pointsConfig).map(([type, points]) => (
-              <div key={type} className="flex items-center justify-between">
-                <label className="text-gray-600 dark:text-gray-400 capitalize flex items-center gap-2">
-                  {type === 'win' && <Trophy className="w-4 h-4" />}
-                  {type === 'draw' && <span className="text-lg">•</span>}
-                  {type === 'loss' && <X className="w-4 h-4" />}
-                  {type} Points
+          <div className="space-y-6 bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+            {/* Scoring Type Selection */}
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-gray-600 dark:text-gray-400">
+                Scoring Type
+              </label>
+              <div className="grid grid-cols-2 gap-4">
+                <button
+                  onClick={() => handleScoringTypeChange('WIN_LOSS')}
+                  className={`
+                    p-4 rounded-lg border-2 text-center transition-colors
+                    ${pointsConfig.type === 'WIN_LOSS'
+                      ? 'border-accent bg-accent/10'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-accent/50'
+                    }
+                  `}
+                >
+                  <div className="font-medium">Win/Loss</div>
+                  <div className="text-xs text-gray-500 mt-1">Simple tracking</div>
+                </button>
+
+                <button
+                  onClick={() => handleScoringTypeChange('POINTS')}
+                  className={`
+                    p-4 rounded-lg border-2 text-center transition-colors
+                    ${pointsConfig.type === 'POINTS'
+                      ? 'border-accent bg-accent/10'
+                      : 'border-gray-200 dark:border-gray-700 hover:border-accent/50'
+                    }
+                  `}
+                >
+                  <div className="font-medium">Points Based</div>
+                  <div className="text-xs text-gray-500 mt-1">Custom points</div>
+                </button>
+              </div>
+            </div>
+
+            {/* Points Configuration */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                  <Check className="w-4 h-4" />
+                  Win Points
                 </label>
                 <input
                   type="number"
-                  value={points}
-                  onChange={(e) => handlePointsChange(type as keyof typeof pointsConfig, parseInt(e.target.value))}
+                  value={pointsConfig.win}
+                  onChange={(e) => handlePointsChange('win', parseInt(e.target.value))}
                   className="w-24 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-accent/20 focus:border-accent transition-colors"
                   min="0"
                 />
               </div>
-            ))}
+
+              {pointsConfig.type === 'POINTS' && (
+                <>
+                  <div className="flex items-center justify-between">
+                    <label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                      <span className="text-lg">•</span>
+                      Draw Points
+                    </label>
+                    <input
+                      type="number"
+                      value={pointsConfig.draw || 0}
+                      onChange={(e) => handlePointsChange('draw', parseInt(e.target.value))}
+                      className="w-24 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-accent/20 focus:border-accent transition-colors"
+                      min="0"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <label className="text-gray-600 dark:text-gray-400 flex items-center gap-2">
+                      <X className="w-4 h-4" />
+                      Loss Points
+                    </label>
+                    <input
+                      type="number"
+                      value={pointsConfig.loss}
+                      onChange={(e) => handlePointsChange('loss', parseInt(e.target.value))}
+                      className="w-24 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-accent/20 focus:border-accent transition-colors"
+                      min="0"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </SettingSection>
 
@@ -327,6 +406,10 @@ export function TournamentSettings({ tournament, onSave, onClose }: TournamentSe
               <div className="flex items-center justify-between">
                 <span className="text-gray-500 dark:text-gray-400">Phase</span>
                 <span className="font-medium capitalize">{tournament.phase.toLowerCase().replace('_', ' ')}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Scoring</span>
+                <span className="font-medium">{pointsConfig.type === 'WIN_LOSS' ? 'Win/Loss' : 'Points Based'}</span>
               </div>
             </div>
           </div>

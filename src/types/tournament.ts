@@ -2,6 +2,8 @@ export type TournamentPhase = 'SINGLE' | 'HOME_AND_AWAY';
 
 export type TeamStatus = 'ACTIVE' | 'WITHDRAWN';
 
+export type ScoringType = 'WIN_LOSS' | 'POINTS';
+
 export interface Team {
   id: string;
   name: string;
@@ -13,9 +15,10 @@ export interface Team {
 }
 
 export interface PointsConfig {
-  win: number;
-  loss: number;
-  draw?: number;
+  type: ScoringType;     // Whether to use simple win/loss or point-based scoring
+  win: number;           // Points for win (typically 1 for WIN_LOSS, 2/3 for POINTS)
+  loss: number;          // Points for loss (typically 0)
+  draw?: number;         // Optional points for draw
 }
 
 export interface Fixture {
@@ -23,10 +26,11 @@ export interface Fixture {
   id: string;
   homeTeamId: string;
   awayTeamId: string;
-  homeScore?: number;
-  awayScore?: number;
+  homeScore?: number;    // Optional for point-based games
+  awayScore?: number;    // Optional for point-based games
+  winner?: string;       // Team ID of winner for WIN_LOSS games
   played: boolean;
-  date?: string;  // ISO date string
+  date?: string;         // ISO date string
   phase: 'HOME' | 'AWAY';
 }
 

@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { typography, containers } from '../../lib/design-system';
-import { Tournament, Team } from '../../types/tournament';
+import { Tournament, Team, ScoringType } from '../../types/tournament';
 import { useMemo, useState } from 'react';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { Info, TrendingDown, TrendingUp, Minus, ChevronUp, ChevronDown } from 'lucide-react';
@@ -72,6 +72,8 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [expandedTeamId, setExpandedTeamId] = useState<string | null>(null);
 
+  const isPointBased = tournament.pointsConfig.type === 'POINTS';
+
   const playerStats = useMemo<PlayerStats[]>(() => {
     return tournament.teams.map(team => {
       const teamFixtures = tournament.fixtures.filter(
@@ -96,25 +98,39 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
 
       playedFixtures.forEach(fixture => {
         const isHome = fixture.homeTeamId === team.id;
-        const teamScore = isHome ? fixture.homeScore! : fixture.awayScore!;
-        const opponentScore = isHome ? fixture.awayScore! : fixture.homeScore!;
-
         stats.gamesPlayed++;
-        stats.pointsScored += teamScore;
-        stats.pointsConceded += opponentScore;
 
-        if (teamScore > opponentScore) {
-          stats.wins++;
-          stats.tournamentPoints += tournament.pointsConfig.win;
-          stats.form.push('W');
-        } else if (teamScore < opponentScore) {
-          stats.losses++;
-          stats.tournamentPoints += tournament.pointsConfig.loss;
-          stats.form.push('L');
+        if (isPointBased) {
+          const teamScore = isHome ? fixture.homeScore! : fixture.awayScore!;
+          const opponentScore = isHome ? fixture.awayScore! : fixture.homeScore!;
+          stats.pointsScored += teamScore;
+          stats.pointsConceded += opponentScore;
+
+          if (teamScore > opponentScore) {
+            stats.wins++;
+            stats.tournamentPoints += tournament.pointsConfig.win;
+            stats.form.push('W');
+          } else if (teamScore < opponentScore) {
+            stats.losses++;
+            stats.tournamentPoints += tournament.pointsConfig.loss;
+            stats.form.push('L');
+          } else {
+            stats.draws++;
+            stats.tournamentPoints += tournament.pointsConfig.draw ?? 0;
+            stats.form.push('D');
+          }
         } else {
-          stats.draws++;
-          stats.tournamentPoints += tournament.pointsConfig.draw ?? 0;
-          stats.form.push('D');
+          // WIN_LOSS scoring
+          const winner = fixture.winner;
+          if (winner === team.id) {
+            stats.wins++;
+            stats.tournamentPoints += tournament.pointsConfig.win;
+            stats.form.push('W');
+          } else {
+            stats.losses++;
+            stats.tournamentPoints += tournament.pointsConfig.loss;
+            stats.form.push('L');
+          }
         }
       });
 
@@ -134,18 +150,23 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
       if (diff !== 0) return diff;
       
       // Secondary sorting
-      if (sortField !== 'pointsDifference') {
-        const pdDiff = (b.pointsDifference - a.pointsDifference) * modifier;
-        if (pdDiff !== 0) return pdDiff;
-      }
-      
-      if (sortField !== 'pointsScored') {
-        return (b.pointsScored - a.pointsScored) * modifier;
+      if (isPointBased) {
+        if (sortField !== 'pointsDifference') {
+          const pdDiff = (b.pointsDifference - a.pointsDifference) * modifier;
+          if (pdDiff !== 0) return pdDiff;
+        }
+        
+        if (sortField !== 'pointsScored') {
+          return (b.pointsScored - a.pointsScored) * modifier;
+        }
+      } else {
+        // For WIN_LOSS, secondary sort by wins
+        return (b.wins - a.wins) * modifier;
       }
       
       return 0;
     });
-  }, [tournament, sortField, sortDirection]);
+  }, [tournament, sortField, sortDirection, isPointBased]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -162,6 +183,15 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
       <ChevronDown className="w-4 h-4" /> : 
       <ChevronUp className="w-4 h-4" />;
   };
+
+  // Get visible columns based on scoring type
+  const visibleColumns = Object.entries(columnDefinitions).filter(([key]) => {
+    if (!isPointBased) {
+      // Hide points-related columns for WIN_LOSS scoring
+      return !['pf', 'pa', 'pd', 'd'].includes(key);
+    }
+    return true;
+  });
 
   return (
     <motion.div layout className="space-y-6">
@@ -191,60 +221,31 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
           <table className="min-w-full divide-y divide-border">
             <thead className="bg-muted/5">
               <tr>
-                <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider w-12">
-                  <Tooltip.Root>
-                    <Tooltip.Trigger asChild>
-                      <div className="flex items-center gap-1">
-                        {columnDefinitions.position.label}
-                        <Info className="w-4 h-4" />
-                      </div>
-                    </Tooltip.Trigger>
-                    <Tooltip.Portal>
-                      <Tooltip.Content className="bg-white dark:bg-gray-800 p-2 rounded-lg shadow-lg text-sm">
-                        {columnDefinitions.position.tooltip}
-                      </Tooltip.Content>
-                    </Tooltip.Portal>
-                  </Tooltip.Root>
-                </th>
-                <th className="px-6 py-4 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  <Tooltip.Root>
-                    <Tooltip.Trigger asChild>
-                      <div className="flex items-center gap-1">
-                        {columnDefinitions.player.label}
-                        <Info className="w-4 h-4" />
-                      </div>
-                    </Tooltip.Trigger>
-                    <Tooltip.Portal>
-                      <Tooltip.Content className="bg-white dark:bg-gray-800 p-2 rounded-lg shadow-lg text-sm">
-                        {columnDefinitions.player.tooltip}
-                      </Tooltip.Content>
-                    </Tooltip.Portal>
-                  </Tooltip.Root>
-                </th>
-                {Object.entries(columnDefinitions)
-                  .filter(([key]) => !['position', 'player'].includes(key))
-                  .map(([key, { label, tooltip }]) => (
-                    <th 
-                      key={key}
-                      className="px-6 py-4 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider cursor-pointer hover:bg-muted/10"
-                      onClick={() => handleSort(key as SortField)}
-                    >
-                      <Tooltip.Root>
-                        <Tooltip.Trigger asChild>
-                          <div className="flex items-center justify-center gap-1">
-                            {label}
-                            <Info className="w-4 h-4" />
-                            {getSortIcon(key as SortField)}
-                          </div>
-                        </Tooltip.Trigger>
-                        <Tooltip.Portal>
-                          <Tooltip.Content className="bg-white dark:bg-gray-800 p-2 rounded-lg shadow-lg text-sm">
-                            {tooltip}
-                          </Tooltip.Content>
-                        </Tooltip.Portal>
-                      </Tooltip.Root>
-                    </th>
-                  ))}
+                {visibleColumns.map(([key, { label, tooltip }]) => (
+                  <th 
+                    key={key}
+                    className={`
+                      px-6 py-4 text-xs font-medium text-muted-foreground uppercase tracking-wider
+                      ${['position', 'player'].includes(key) ? 'text-left' : 'text-center cursor-pointer hover:bg-muted/10'}
+                    `}
+                    onClick={() => !['position', 'player'].includes(key) && handleSort(key as SortField)}
+                  >
+                    <Tooltip.Root>
+                      <Tooltip.Trigger asChild>
+                        <div className={`flex items-center gap-1 ${!['position', 'player'].includes(key) ? 'justify-center' : ''}`}>
+                          {label}
+                          <Info className="w-4 h-4" />
+                          {!['position', 'player'].includes(key) && getSortIcon(key as SortField)}
+                        </div>
+                      </Tooltip.Trigger>
+                      <Tooltip.Portal>
+                        <Tooltip.Content className="bg-white dark:bg-gray-800 p-2 rounded-lg shadow-lg text-sm">
+                          {tooltip}
+                        </Tooltip.Content>
+                      </Tooltip.Portal>
+                    </Tooltip.Root>
+                  </th>
+                ))}
                 <th className="px-6 py-4 text-center text-xs font-medium text-muted-foreground uppercase tracking-wider">
                   Form
                 </th>
@@ -288,11 +289,18 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.gamesPlayed}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.wins}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.draws}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.losses}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.pointsScored}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.pointsConceded}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.pointsDifference}</td>
+                    {isPointBased && (
+                      <>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.draws}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.losses}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.pointsScored}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.pointsConceded}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.pointsDifference}</td>
+                      </>
+                    )}
+                    {!isPointBased && (
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-center text-gray-600 dark:text-gray-300">{player.losses}</td>
+                    )}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-center font-bold text-gray-900 dark:text-gray-100">{player.tournamentPoints}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <div className="flex justify-center gap-1">
@@ -357,6 +365,19 @@ export function TournamentTable({ tournament, participantTeamId }: TournamentTab
                 <div className="text-lg">{player.losses}</div>
               </div>
             </div>
+
+            {isPointBased && (
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Points For</div>
+                  <div className="text-lg">{player.pointsScored}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-gray-500 dark:text-gray-400">Points Against</div>
+                  <div className="text-lg">{player.pointsConceded}</div>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <div className="text-xs text-gray-500 dark:text-gray-400">Form</div>

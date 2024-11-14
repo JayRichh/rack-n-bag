@@ -27,9 +27,9 @@ export const testTournament = {
     }
   ],
   pointsConfig: {
-    win: 3,
-    loss: 0,
-    draw: 1
+    type: "WIN_LOSS",
+    win: 1,
+    loss: 0
   },
   dateCreated: new Date().toISOString(),
   dateModified: new Date().toISOString()

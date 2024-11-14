@@ -1,4 +1,4 @@
-import { Tournament, Team, Fixture } from '../types/tournament';
+import { Tournament, Team, Fixture, ScoringType, PointsConfig } from '../types/tournament';
 import { compress, decompress } from 'lz-string';
 
 // Use URL-safe base64 instead of custom base85 for better reliability
@@ -57,8 +57,10 @@ function compactTournament(t: Tournament): any {
     n: t.name,
     p: t.phase === 'SINGLE' ? 0 : 1,
     c: {
+      t: t.pointsConfig.type === 'WIN_LOSS' ? 0 : 1, // 0 for WIN_LOSS, 1 for POINTS
       w: t.pointsConfig.win,
-      l: t.pointsConfig.loss
+      l: t.pointsConfig.loss,
+      d: t.pointsConfig.draw // only included for POINTS type
     },
     t: t.teams.map(team => ({
       i: team.id,
@@ -71,8 +73,9 @@ function compactTournament(t: Tournament): any {
       i: fix.id,
       h: fix.homeTeamId,
       a: fix.awayTeamId,
-      s: fix.homeScore || 0,
-      r: fix.awayScore || 0,
+      s: fix.homeScore,
+      r: fix.awayScore,
+      w: fix.winner, // winner ID for WIN_LOSS type
       p: fix.played ? 1 : 0,
       m: fix.phase === 'HOME' ? 0 : 1
     }))
@@ -83,6 +86,14 @@ function expandTournament(c: any): Tournament {
   if (c.v !== 2) throw new Error('Unsupported version');
 
   const now = new Date().toISOString();
+  const scoringType: ScoringType = c.c.t === 0 ? 'WIN_LOSS' : 'POINTS';
+  
+  const pointsConfig: PointsConfig = {
+    type: scoringType,
+    win: c.c.w,
+    loss: c.c.l,
+    ...(scoringType === 'POINTS' && c.c.d !== undefined ? { draw: c.c.d } : {})
+  };
   
   const teams: Team[] = c.t.map((t: any) => ({
     id: t.i,
@@ -100,6 +111,7 @@ function expandTournament(c: any): Tournament {
     awayTeamId: f.a,
     homeScore: f.s,
     awayScore: f.r,
+    winner: f.w, // winner ID for WIN_LOSS type
     played: f.p === 1,
     phase: f.m === 0 ? 'HOME' : 'AWAY',
     date: now,
@@ -110,10 +122,7 @@ function expandTournament(c: any): Tournament {
     id: c.i,
     name: c.n,
     phase: c.p === 0 ? 'SINGLE' : 'HOME_AND_AWAY',
-    pointsConfig: {
-      win: c.c.w,
-      loss: c.c.l
-    },
+    pointsConfig,
     teams,
     fixtures,
     dateCreated: now,
