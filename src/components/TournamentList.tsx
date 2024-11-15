@@ -7,7 +7,7 @@ import { Tournament } from '../types/tournament';
 import { storage } from '../utils/storage';
 import { typography, containers, interactive, status } from '../lib/design-system';
 import { Trash2, RotateCcw, PlusCircle, Upload, Share2, Download, FileUp, Clipboard } from 'lucide-react';
-import { clearAllStoredData } from '../utils/clear-storage';
+import { clearAllStoredData, clearAbsolutelyAllData } from '../utils/clear-storage';
 import { useTournamentImportExport } from '../hooks/useTournamentImportExport';
 
 interface ImportModalProps {
@@ -17,6 +17,31 @@ interface ImportModalProps {
   onImportClipboard: () => void;
   isLoading?: boolean;
 }
+
+interface ExportModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  tournament: Tournament;
+  onExportFile: () => void;
+  onExportShareCode: () => void;
+  isLoading?: boolean;
+}
+
+interface DeleteConfirmModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title: string;
+  message: string;
+}
+
+interface ResetModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onResetToDefaults: () => void;
+  onClearAll: () => void;
+}
+
 const getFormatLabel = (tournament: Tournament) => {
   switch (tournament.phase) {
     case 'ROUND_ROBIN_SINGLE':
@@ -44,6 +69,7 @@ const getFormatDescription = (tournament: Tournament) => {
       return scoringType;
   }
 };
+
 function ImportModal({ isOpen, onClose, onImportFile, onImportClipboard, isLoading }: ImportModalProps) {
   if (!isOpen) return null;
 
@@ -86,15 +112,6 @@ function ImportModal({ isOpen, onClose, onImportFile, onImportClipboard, isLoadi
       </motion.div>
     </div>
   );
-}
-
-interface ExportModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  tournament: Tournament;
-  onExportFile: () => void;
-  onExportShareCode: () => void;
-  isLoading?: boolean;
 }
 
 function ExportModal({ isOpen, onClose, tournament, onExportFile, onExportShareCode, isLoading }: ExportModalProps) {
@@ -141,14 +158,6 @@ function ExportModal({ isOpen, onClose, tournament, onExportFile, onExportShareC
   );
 }
 
-interface DeleteConfirmModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  title: string;
-  message: string;
-}
-
 function DeleteConfirmModal({ isOpen, onClose, onConfirm, title, message }: DeleteConfirmModalProps) {
   if (!isOpen) return null;
 
@@ -180,6 +189,48 @@ function DeleteConfirmModal({ isOpen, onClose, onConfirm, title, message }: Dele
   );
 }
 
+function ResetModal({ isOpen, onClose, onResetToDefaults, onClearAll }: ResetModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <motion.div
+        role="dialog"
+        aria-labelledby="reset-title"
+        initial={{ scale: 0.95, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        exit={{ scale: 0.95, opacity: 0 }}
+        className={`${containers.card} max-w-md w-full mx-4`}
+      >
+        <h3 id="reset-title" className={`${typography.h3} mb-4`}>Reset Options</h3>
+        <div className="space-y-4">
+          <button
+            onClick={onResetToDefaults}
+            className={`${interactive.button.ghost} w-full justify-start`}
+          >
+            <RotateCcw className="w-4 h-4 mr-2" />
+            Reset to Defaults
+            <span className="text-xs text-muted-foreground ml-auto">Keeps settings</span>
+          </button>
+          <button
+            onClick={onClearAll}
+            className={`${interactive.button.ghost} w-full justify-start text-red-500`}
+          >
+            <Trash2 className="w-4 h-4 mr-2" />
+            Clear Everything
+            <span className="text-xs text-muted-foreground ml-auto">Complete reset</span>
+          </button>
+        </div>
+        <div className="flex justify-end mt-6">
+          <button onClick={onClose} className={interactive.button.ghost}>
+            Cancel
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 const TournamentCard = forwardRef<HTMLDivElement, { tournament: Tournament; onDelete: (id: string) => void; onShare: (tournament: Tournament) => void }>(
   ({ tournament, onDelete, onShare }, ref) => {
     const router = useRouter();
@@ -202,7 +253,6 @@ const TournamentCard = forwardRef<HTMLDivElement, { tournament: Tournament; onDe
       onDelete(tournament.id);
       setShowDeleteConfirm(false);
     };
-
 
     function getParticipantLabel(length: number): React.ReactNode {
       return `${length} ${length === 1 ? 'team' : 'teams'}`;
@@ -323,7 +373,7 @@ function EmptyState() {
 export function TournamentList() {
   const router = useRouter();
   const [tournaments, setTournaments] = useState(storage.getTournaments());
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [showResetModal, setShowResetModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [selectedTournament, setSelectedTournament] = useState<Tournament | null>(null);
@@ -343,8 +393,13 @@ export function TournamentList() {
     setTournaments(storage.getTournaments());
   };
 
-  const handleReset = () => {
+  const handleResetToDefaults = () => {
     clearAllStoredData();
+    window.location.reload();
+  };
+
+  const handleClearAll = () => {
+    clearAbsolutelyAllData();
     window.location.reload();
   };
 
@@ -414,7 +469,7 @@ export function TournamentList() {
         <div className="flex items-center gap-4">
           <h2 className={typography.h2}>Your Tournaments</h2>
           <button
-            onClick={() => setShowResetConfirm(true)}
+            onClick={() => setShowResetModal(true)}
             className="text-muted-foreground hover:text-accent transition-colors flex items-center gap-2 text-sm"
           >
             <RotateCcw className="w-4 h-4" />
@@ -465,12 +520,11 @@ export function TournamentList() {
         </AnimatePresence>
       </div>
 
-      <DeleteConfirmModal
-        isOpen={showResetConfirm}
-        onClose={() => setShowResetConfirm(false)}
-        onConfirm={handleReset}
-        title="Reset All Data"
-        message="Are you sure you want to reset all data? This will clear all tournaments and settings. This action cannot be undone."
+      <ResetModal
+        isOpen={showResetModal}
+        onClose={() => setShowResetModal(false)}
+        onResetToDefaults={handleResetToDefaults}
+        onClearAll={handleClearAll}
       />
 
       <ImportModal
