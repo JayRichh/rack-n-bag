@@ -2,6 +2,7 @@ import { Metadata } from 'next';
 
 const defaultMetadata: Metadata = {
   metadataBase: new URL('https://rack-n-bag.vercel.app'),
+  alternates: { canonical: '/' },
   title: {
     default: 'Rack \'n\' Bag - Tournament Management',
     template: '%s | Rack \'n\' Bag'
